@@ -1,0 +1,18 @@
+{
+  "name": "mosaic-proxy",
+  "version": "0.0.1",
+  "description": "server for a glsl mosaic site",
+  "main": "server.js",
+  "dependencies": {
+    "express": "~4.1.1",
+    "mkdirp": "~0.4.1",
+    "request": "~2.34.0",
+    "socket.io": "~0.9.16"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "neil"
+}

@@ -1,0 +1,363 @@
+<html>
+  <script src="./jquery-1.11.0.min.js"></script>
+  <script src="./three.min.js"></script>
+  <script src="socket.io/socket.io.js"></script>
+  <script src="https://www.google.com/jsapi"></script>
+  <body style="width: 100%; height: 100%; margin: 0px;">
+    <div id="stage" width="100%" height="100%"></div>
+  </body>
+  <script id="vertexShader" type="x-shader/x-vertex">
+/* Vertex shader */
+precision highp float;
+precision highp int;
+
+uniform float time;
+uniform vec2 resolution;
+uniform vec2 mouse;
+
+void main() {
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+  </script>
+  <script id="fragmentShader" type="x-shader/x-fragment">
+/* Fragment shader */
+precision highp float;
+precision highp int;
+
+#define NUM_IMAGES 8
+
+uniform float time;
+uniform vec2 resolution;
+uniform vec2 mouse;
+
+uniform int numSubTiles;
+
+uniform sampler2D superTileTexture;
+uniform sampler2D subTileTextures[NUM_IMAGES];
+
+uniform vec3 superTileAverage;
+uniform vec3 subTileAverages[NUM_IMAGES];
+
+uniform float zoom;
+uniform float zoomMax;
+uniform vec2 zoomPosition;
+
+void main() {
+  const vec2 TILE_SIZE = vec2(0.05, 0.05); 
+  float zoomPoly = zoom * zoom * zoom; // level of zoom 
+  vec2 nPos = gl_FragCoord.xy / resolution.xy; // coordinate of fragment from (0,0) to (1,1), wrt entire renderable area
+  vec2 zPos = vec2(nPos.x, nPos.y) / zoomPoly + zoomPosition; // coordinate of the fragment in the zoomed space
+
+  vec2 tile = vec2(floor(zPos.x / TILE_SIZE.x), floor(zPos.y / TILE_SIZE.y)); // the tile this fragment resides in (eg (0,0), (1,4), etc...)
+  vec2 tPos = zPos / TILE_SIZE - tile; // the location of the fragment wrt its tile
+
+  // calculate average color of the super image in the tile's region
+  vec4 sum = vec4(0.);
+  const int PIXEL_SAMPLES = 10;
+  for (int i = 0; i < PIXEL_SAMPLES; i++) {
+    for (int j = 0; j < PIXEL_SAMPLES; j++) {
+      vec2 tileTopLeft = tile * TILE_SIZE;
+      vec2 ijPercent = vec2(float(i) / float(PIXEL_SAMPLES), float(j) / float(PIXEL_SAMPLES));
+      sum += texture2D(superTileTexture, tileTopLeft + ijPercent * TILE_SIZE);
+    }
+  }
+  vec4 average = sum / float(PIXEL_SAMPLES * PIXEL_SAMPLES);
+
+  // find the subtile texture with the closest average
+  int closestIndex = -1;
+  float closestDist = 9999999999.;
+  for (int ti = 0; ti < NUM_IMAGES; ti++) {
+    float newDist = distance(average.rgb, subTileAverages[ti].rgb);
+    if (newDist < closestDist) {
+      closestDist = newDist;
+      closestIndex = ti;
+    }
+  }
+
+  vec4 bigTilePixel = texture2D(superTileTexture, zPos);
+  vec4 smallTilePixel = vec4(0.);
+  // TODO: workaround. We cannot use nonconst vars as texture index, so we do this instead:
+  for (int i = 0; i < NUM_IMAGES; i++) if (i == closestIndex) smallTilePixel = texture2D(subTileTextures[i], tPos);
+
+  float zoomFactor = (zoom - 1.) / (zoomMax - 1.);
+  gl_FragColor = mix(bigTilePixel, 
+                     smallTilePixel,
+                     smoothstep(-0.1, 1.1, (zoom-1.)/(zoomMax-1.)));
+
+  // encode next supertile index in the bottommost row
+  if (gl_FragCoord.y == 0.5) {
+    gl_FragColor = vec4(float(closestIndex) / float(NUM_IMAGES), 1., 1., 1.);
+  }
+}
+  </script>
+  <script>
+  </script>
+  <script>
+    // -- google image crawler --
+    // TODO: add user input for changing queries
+    var queries = ['van gogh', 'color'];
+    var downloadStack = [];
+    var numImages = 8; // any changes to this need to be reflected in the shader
+
+    // gets image urls from google images and stores them in stack
+    // google.load() needs to first be called before calling this
+    var getGISURLS = function(stack, query, callback) {
+      var gis = google.search.ImageSearch;
+      var imageSearch = new google.search.ImageSearch();
+      imageSearch.setRestriction(gis.RESTRICT_IMAGESIZE,
+                                 gis.IMAGESIZE_SMALL);
+      imageSearch.setResultSetSize(numImages);
+      imageSearch.setSearchCompleteCallback(this, function(query, callback) {
+        for (var i = 0; i < imageSearch.results.length; i++) {
+          stack.push(imageSearch.results[i].url);
+        }
+        callback();
+      }, [query, callback]);
+      imageSearch.execute(query);
+    };
+
+    // get images
+    var queryStacks = [[], []];
+    google.load('search', '1');
+    google.setOnLoadCallback(function() {
+      getGISURLS(queryStacks[0], queries[0], function() {
+        getGISURLS(queryStacks[1], queries[1], function() {
+          // once we have our urls, send them to the server for rehosting
+          var socket = io.connect('/', {reconnect: false});
+          socket.emit('reuploadRequest', queries, queryStacks);
+
+          // once the server tells us it has finished...
+          socket.on('reuploadComplete', function() {
+            $(document).trigger('allImagesReady', [queries, numImages]);
+          });
+        });
+      });
+    });
+/*
+    google.load('search', '1');
+    google.setOnLoadCallback(function() {
+      for (var qIndex = 0; qIndex < queries.length; qIndex++) {
+        var query = queries[qIndex];
+        var gis = google.search.ImageSearch;
+        var colors = [gis.COLOR_BLACK, 
+                      gis.COLOR_BLUE,
+                      gis.COLOR_BROWN,
+                      gis.COLOR_GRAY,
+                      gis.COLOR_GREEN,
+                      gis.COLOR_ORANGE,
+                      gis.COLOR_PINK,
+                      gis.COLOR_PURPLE,
+                      gis.COLOR_RED,
+                      gis.COLOR_TEAL,
+                      gis.COLOR_WHITE,
+                      gis.COLOR_YELLOW];
+        images[query] = {};
+        function search(queries, queryIndex, colors, colorIndex) {
+          var imageSearch = new google.search.ImageSearch();
+          var color = colors[colorIndex];
+          console.log(color);
+          imageSearch.setRestriction(gis.RESTRICT_IMAGESIZE,
+                                    gis.IMAGESIZE_MEDIUM);
+          imageSearch.setRestriction(gis.RESTRICT_COLORFILTER, color);
+          imageSearch.setResultSetSize(1);
+          imageSearch.setSearchCompleteCallback(this, function (color, query, qIndex, images) {
+            if (imageSearch.results && imageSearch.results.length > 0) {
+              var results = imageSearch.results;
+              for (var i = 0; i < results.length; i++) {
+                $('body').append('<img src="' + results[i].tbUrl + '"></img>');
+                console.log(color, results[i].tbUrl);
+                images[query][color] = results[i].tbUrl;
+              }
+            }
+  
+            if (colorIndex + 1 < colors.length) {
+              search(queries, queryIndex, colors, colorIndex + 1);
+            }
+            else if (qIndex + 1 == queries.length) { // if each color + each query has completed
+              $(document).trigger('allImagesRetrieved', images);
+            }
+          }, [color, query, qIndex, images]);
+          imageSearch.execute(query);
+        }
+        search(colors, 0);
+      }
+    });*/
+  </script>
+  <script>
+    function flatten(arr) {
+      return arr.reduce(function(a, b) {
+        return a.concat(b);
+      });
+    }
+
+    // start the mosaic once the reuploaded images are ready
+    $(document).on('allImagesReady', function(e, queries, numImages) {
+      console.log('ready');
+      // -- graphics code --
+      // -- set up --
+      var scene = new THREE.Scene();
+      var camera = undefined; 
+      var renderer = new THREE.WebGLRenderer({antialias: true});
+      var timeStarted = new Date();
+      var superTileTextures, subTileTextures;
+      var superTileAverages = [], subTileAverages = [];
+
+      // -- initialize basic uniforms --
+      var uniforms = {
+          time: {type: 'f', value: 0},
+          mouse: {type: 'v2', value: new THREE.Vector2(0, 0)},
+          resolution: {type: 'v2', value: new THREE.Vector2(0, 0)},
+
+          zoom: {type: 'f', value: 1},
+          zoomMax: {type: 'f', value: 2.7}, 
+          zoomPosition: {type: 'v2', value: new THREE.Vector2(0, 0)},
+      };
+
+      // image loading and preprocessing
+      // placeholder values until we calculate actual averages
+      for (var i = 0; i < numImages; i++) {
+        superTileAverages.push([0.5, 0.5, 0.5]);
+        subTileAverages.push([0.5, 0.5, 0.5]);
+      }
+
+      // load the reuploaded images and calculate average color
+      for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+        var query = queries[queryIndex];
+        var textures = [];
+
+        // load images
+        for (var i = 0; i < numImages; i++) {
+          var url = 'reup/' + query + '/' + i;
+          // get texture (sync)
+          var texture = new THREE.ImageUtils.loadTexture(url);
+          texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+          textures.push(texture);
+
+          // calculate average color (async)
+          (function(i, queryIndex) {
+            var img = new Image();
+            img.src = url;
+            img.onload = function() {
+              var context = document.createElement('canvas').getContext('2d');
+              context.drawImage(this, 0, 0);
+              var data = context.getImageData(0, 0, this.width, this.height).data;
+
+              var average = [0.0, 0.0, 0.0];
+              for (var j = 0; j < data.length; j += 4) {
+                average[0] += data[j + 0];
+                average[1] += data[j + 1];
+                average[2] += data[j + 2];
+                // skip alpha channel
+              }
+              average[0] /= (data.length / 4.0 * 255.0);
+              average[1] /= (data.length / 4.0 * 255.0);
+              average[2] /= (data.length / 4.0 * 255.0);
+
+              if (queryIndex == 0) {
+                superTileAverages[i] = average;
+              }
+              else if (queryIndex == 1) {
+                subTileAverages[i] = average;
+              }
+            }
+          })(i, queryIndex);
+        }
+        if (queryIndex == 0) {
+          superTileTextures = textures;
+        }
+        else if (queryIndex == 1) {
+          subTileTextures = textures;
+        }
+      } 
+
+      // create uniforms for the textures
+      uniforms.superTileTexture = {type: 't', value: superTileTextures[0]};
+      uniforms.subTileTextures = {type: 'tv', value: subTileTextures};
+      uniforms.superTileAverage = {type: 'v', value: superTileAverages[0]};
+      uniforms.subTileAverages = {type: 'fv', value: flatten(subTileAverages)};
+
+      $('#stage').append(renderer.domElement);
+
+      // make the canvas always cover the entire screen
+      window.onresize = function() {
+        var width = window.innerWidth;
+        var height = window.innerHeight;
+        var viewingAngle = 70;
+        var aspectRatio = width / height;
+        var near = 0.1, far = 2000;
+        renderer.setSize(width, height);
+        $(renderer.domElement).attr('width', width);
+        $(renderer.domElement).attr('height', height);
+        camera = new THREE.PerspectiveCamera(viewingAngle, aspectRatio, near, far);
+        uniforms.resolution.value.set(width, height);
+
+        scene.add(camera);
+        camera.position.set(0, 0, 0);
+        camera.lookAt(scene.position);
+      }
+      window.onresize();
+
+      // -- initialize quad --
+      var shaderMaterial = new THREE.ShaderMaterial({
+        vertexShader: $('#vertexShader').get(0).textContent,
+        fragmentShader: $('#fragmentShader').get(0).textContent,
+        uniforms: uniforms,
+      });
+      var planeGeometry = new THREE.PlaneGeometry(50, 50, 50, 50);
+      var plane = new THREE.Mesh(planeGeometry, shaderMaterial);
+      plane.position.set(0, 0, -1);
+      scene.add(plane);
+
+      // -- mouse tracking -- TODO unused at the moment
+      $('body').mousemove(function(event) {
+        uniforms.mouse.value.set(event.clientX, window.innerHeight - event.clientY /* flip y */);
+      });
+
+      // -- begin rendering --
+      function render() {
+        requestAnimationFrame(render);
+        renderer.render(scene, camera);
+        function update() {
+          var prevTimeElapsed = uniforms.time.value;
+          var timeElapsed = (new Date()) - timeStarted;
+          var dt = timeElapsed - prevTimeElapsed;
+          uniforms.time.value = timeElapsed;
+
+          var ZOOM_MAX = uniforms.zoomMax.value;
+          uniforms.zoom.value = uniforms.zoom.value + dt / 2000;
+          if (uniforms.zoom.value > ZOOM_MAX) {
+            // reset zoom and switch the sub/super tilesets
+            uniforms.zoom.value = uniforms.zoom.value % ZOOM_MAX + 1.0;
+
+            var tmp = superTileTextures;
+            superTileTextures = subTileTextures;
+            subTileTextures = tmp;
+
+            tmp = superTileAverages;
+            superTileAverages = subTileAverages;
+            subTileAverages = tmp;
+
+            // the bottom left pixel's r value encodes the new super tile texture index.
+            // we need to retrieve it and modify our uniforms to reflect the change
+            var canvas = document.createElement('canvas');
+            canvas.width = renderer.domElement.width;
+            canvas.height = renderer.domElement.height;
+            var context = canvas.getContext('2d');
+            context.drawImage(renderer.domElement, 0, 0);
+            var pixelData = context.getImageData(0, renderer.domElement.height-1, 1, 1).data;
+            var newSuperTileIndex = Math.floor(pixelData[0] / 255 * numImages + 0.5); 
+
+            uniforms.superTileTexture.value = superTileTextures[newSuperTileIndex];
+            uniforms.subTileTextures.value = subTileTextures;
+            uniforms.superTileAverage.value = superTileAverages[newSuperTileIndex];
+            uniforms.subTileAverages.value = flatten(subTileAverages);
+          }
+          var zoomPos = 0;
+          uniforms.zoomPosition.value = new THREE.Vector2(zoomPos, zoomPos);
+        }
+        update();
+      }
+      render();
+    })
+  </script>
+</html>
