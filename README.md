@@ -6,15 +6,19 @@ Installation
 ----
 Install [node.js](nodejs.org) and run:
 
-```cd server
-npm install```
+```
+cd server
+npm install
+```
 
 Viewing the mosaic
 ----
 Start the server with
 
-```cd server
-npm start```
+```
+cd server
+npm start
+```
 
 and go to [localhost:8080](http://localhost:8080)
 
