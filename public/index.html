@@ -24,7 +24,7 @@ void main() {
 precision highp float;
 precision highp int;
 
-#define NUM_IMAGES 8
+#define NUM_IMAGES 25
 
 uniform float time;
 uniform vec2 resolution;
@@ -44,7 +44,7 @@ uniform vec2 zoomPosition;
 
 void main() {
   const vec2 TILE_SIZE = vec2(0.05, 0.05); 
-  float zoomPoly = zoom * zoom * zoom; // level of zoom 
+  float zoomPoly = 1.;//zoom * zoom * zoom; // level of zoom 
   vec2 nPos = gl_FragCoord.xy / resolution.xy; // coordinate of fragment from (0,0) to (1,1), wrt entire renderable area
   vec2 zPos = vec2(nPos.x, nPos.y) / zoomPoly + zoomPosition; // coordinate of the fragment in the zoomed space
 
@@ -94,38 +94,60 @@ void main() {
   </script>
   <script>
     // -- google image crawler --
-    // TODO: add user input for changing queries
-    var queries = ['van gogh', 'color'];
-    var downloadStack = [];
-    var numImages = 8; // any changes to this need to be reflected in the shader
 
     // gets image urls from google images and stores them in stack
     // google.load() needs to first be called before calling this
-    var getGISURLS = function(stack, query, callback) {
+    var getGISURLS = function(stack, query, numImages, callback) {
+      var MAX_IMAGES_PER_PAGE = 8; // api's max results per page is 8
       var gis = google.search.ImageSearch;
       var imageSearch = new google.search.ImageSearch();
       imageSearch.setRestriction(gis.RESTRICT_IMAGESIZE,
                                  gis.IMAGESIZE_SMALL);
-      imageSearch.setResultSetSize(numImages);
+      imageSearch.setResultSetSize(Math.min(MAX_IMAGES_PER_PAGE, numImages));
       imageSearch.setSearchCompleteCallback(this, function(query, callback) {
-        for (var i = 0; i < imageSearch.results.length; i++) {
+        console.log('search complete');
+        // TODO check if page out of range (how?)
+        for (var i = 0; 
+             stack.length < numImages && i < MAX_IMAGES_PER_PAGE; 
+             i++) {
           stack.push(imageSearch.results[i].url);
         }
-        callback();
+
+        if (stack.length >= numImages) {
+          callback();
+        }
+        else { // turn page if we have yet to get enough images
+          var cursor = imageSearch.cursor;
+          var numPagesAvailable = cursor.pages.length;
+          console.log('turn pg', cursor.currentPageIndex+1, '/', numPagesAvailable);
+          if (cursor.currentPageIndex+1 < numPagesAvailable) {
+            imageSearch.gotoPage(cursor.currentPageIndex+1);
+          }
+          else {
+            alert('not enough pages');
+          }
+        }
       }, [query, callback]);
       imageSearch.execute(query);
     };
 
     // get images
+    // TODO: add user input for changing queries
+    var queries = ['space', 'nature'];
+    var downloadStack = [];
+    var numImages = 25; // any changes to this need to be reflected in the shader
+
+    console.log('begin gis search...');
     var queryStacks = [[], []];
     google.load('search', '1');
     google.setOnLoadCallback(function() {
-      getGISURLS(queryStacks[0], queries[0], function() {
-        getGISURLS(queryStacks[1], queries[1], function() {
+      getGISURLS(queryStacks[0], queries[0], numImages, function() {
+        getGISURLS(queryStacks[1], queries[1], numImages, function() {
           // once we have our urls, send them to the server for rehosting
           var socket = io.connect('/', {reconnect: false});
           socket.emit('reuploadRequest', queries, queryStacks);
 
+          console.log('waiting for reply from server...');
           // once the server tells us it has finished...
           socket.on('reuploadComplete', function() {
             $(document).trigger('allImagesReady', [queries, numImages]);
@@ -192,7 +214,7 @@ void main() {
 
     // start the mosaic once the reuploaded images are ready
     $(document).on('allImagesReady', function(e, queries, numImages) {
-      console.log('ready');
+      console.log('starting mosaic');
       // -- graphics code --
       // -- set up --
       var scene = new THREE.Scene();
@@ -275,6 +297,8 @@ void main() {
       uniforms.subTileTextures = {type: 'tv', value: subTileTextures};
       uniforms.superTileAverage = {type: 'v', value: superTileAverages[0]};
       uniforms.subTileAverages = {type: 'fv', value: flatten(subTileAverages)};
+
+      console.log(superTileTextures.length, subTileTextures.length);
 
       $('#stage').append(renderer.domElement);
 

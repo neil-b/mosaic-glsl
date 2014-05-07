@@ -20,6 +20,7 @@ app.use(express.static(__dirname + '/../public'));
 app.use(express.static(__dirname + 'reup'));
 
 function download(url, outPath, callback) {
+  console.log('begin download', url);
   request.head(url, function(err, res, body) {
     if (!err && res.statusCode == 200) {
       var req = request(url).pipe(fs.createWriteStream(outPath));
@@ -29,11 +30,14 @@ function download(url, outPath, callback) {
 }
 
 io.sockets.on('connection', function(socket) {
+  console.log('user connected');
   socket.on('reuploadRequest', function(queries, urlStacks) {
+    console.log('reupload requested');
     var remainingReuploads = 0;
     for (var i = 0; i < queries.length; i++) {
       remainingReuploads += urlStacks[i].length;
     }
+    // TODO: what do we do if an image has a slow connection
     // TODO: don't download if file already exists
     var reuploadFolder = '../public/reup/';
     for (var i = 0; i < queries.length; i++) {
@@ -46,7 +50,7 @@ io.sockets.on('connection', function(socket) {
             else {
               download(urlStacks[i][j], reuploadFolder + queries[i] + '/' + j, function() {
                 remainingReuploads--;
-                console.log('closed');
+                console.log('image', urlStacks[i][j], 'downloaded', remainingReuploads, 'left');
                 if (remainingReuploads == 0) {
                   console.log('all done');
                   socket.emit('reuploadComplete');
