@@ -20,11 +20,26 @@ app.use(express.static(__dirname + '/../public'));
 app.use(express.static(__dirname + 'reup'));
 
 function download(url, outPath, callback) {
-  console.log('begin download', url);
+  var TIMEOUT_MS = 10000; // abort after 10sec
+
   request.head(url, function(err, res, body) {
-    if (!err && res.statusCode == 200) {
-      var req = request(url).pipe(fs.createWriteStream(outPath));
-      req.on('close', callback);
+    try {
+      if (!err && res.statusCode == 200) {
+        var req = request({
+          uri: url, 
+          timeout: TIMEOUT_MS
+        }).pipe(fs.createWriteStream(outPath));
+        req.on('close', function() {
+          callback(true);
+        });
+      }
+      else {
+        console.error(url, 'download failed (1)', err, res.statusCode);
+        callback(false);
+      }
+    } catch (e) {
+      console.error(url, 'download failed (2)', e);
+      callback(false);
     }
   });
 }
@@ -34,10 +49,21 @@ io.sockets.on('connection', function(socket) {
   socket.on('reuploadRequest', function(queries, urlStacks) {
     console.log('reupload requested');
     var remainingReuploads = 0;
+    var successfulReuploads = [];
     for (var i = 0; i < queries.length; i++) {
       remainingReuploads += urlStacks[i].length;
+      successfulReuploads.push([]);
     }
-    // TODO: what do we do if an image has a slow connection
+
+    function finish() {
+      console.log('all done');
+      socket.emit('reuploadComplete', successfulReuploads);
+    }
+
+    if (remainingReuploads == 0) {
+      finish();
+    }
+
     // TODO: don't download if file already exists
     var reuploadFolder = '../public/reup/';
     for (var i = 0; i < queries.length; i++) {
@@ -48,12 +74,18 @@ io.sockets.on('connection', function(socket) {
               console.error(err);
             }
             else {
-              download(urlStacks[i][j], reuploadFolder + queries[i] + '/' + j, function() {
+              download(urlStacks[i][j], reuploadFolder + queries[i] + '/' + j, function(success) {
                 remainingReuploads--;
-                console.log('image', urlStacks[i][j], 'downloaded', remainingReuploads, 'left');
+                // keep track of all the images that were successfully reup-ed
+                if (success) {
+                  var goodReups = successfulReuploads[i];
+                  if (!goodReups) goodReups = [];
+                  goodReups.push(j);
+                  successfulReuploads[i] = goodReups;
+                }
+
                 if (remainingReuploads == 0) {
-                  console.log('all done');
-                  socket.emit('reuploadComplete');
+                  finish();
                 }
               });
             }
