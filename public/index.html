@@ -5,6 +5,11 @@
   <script src="https://www.google.com/jsapi"></script>
   <body style="width: 100%; height: 100%; margin: 0px;">
     <div id="stage" width="100%" height="100%"></div>
+    <div id="queryEditor" style="padding:0.2em; position:fixed; left:1em; top:1em; background-color:#333333">
+      <input type="text" id="query1" placeholder="first query" value="space"><br>
+      <input type="text" id="query2" placeholder="second query" value="nature"><br>
+      <button id="searchButton">Go</button>
+    </div>
   </body>
   <script id="vertexShader" type="x-shader/x-vertex">
 /* Vertex shader */
@@ -137,13 +142,24 @@ void main() {
       imageSearch.execute(query);
     };
 
+
+    // from http://stackoverflow.com/questions/1403888/get-escaped-url-parameter
+    function getURLParameter(name) {
+      var ret = decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+      );
+      if (ret == 'null') return undefined;
+      else return ret;
+    }
+
     // get images
-    // TODO: add user input for changing queries
-    var queries = ['outer space', 'wilderness'];
+    var query1 = getURLParameter('q1') || 'space';
+    var query2 = getURLParameter('q2') || 'nature';
+    var queries = [query1, query2];
     var downloadStack = [];
     var numImages = 9; // any changes to this need to be reflected in the shader
 
-    console.log('begin gis search...');
+    console.log('begin gis search...', queries);
     var queryStacks = [[], []];
     google.load('search', '1');
     google.setOnLoadCallback(function() {
@@ -212,6 +228,31 @@ void main() {
     });*/
   </script>
   <script>
+    $('#searchButton').click(function() {
+      console.log($('#query1').val(), $('#query2').val());
+      var q1 = $('#query1').val(), q2 = $('#query2').val();
+      if (q1.length > 0 && q2.length > 0) {
+        window.location = '?q1=' + q1 + '&q2=' + q2;
+      }
+    });
+
+    $('#query1').on('input', function() {
+      if ($('#query1').val().length == 0) {
+        $('#searchButton').attr('disabled', 'disabled');
+      }
+      else if ($('#query2').val().length > 0) {
+        $('#searchButton').removeAttr('disabled');
+      }
+    });
+    $('#query2').on('input', function() {
+      if ($('#query2').val().length == 0) {
+        $('#searchButton').attr('disabled', 'disabled');
+      }
+      else if ($('#query1').val().length > 0) {
+        $('#searchButton').removeAttr('disabled');
+      }
+    });
+
     function flatten(arr) {
       return arr.reduce(function(a, b) {
         return a.concat(b);
