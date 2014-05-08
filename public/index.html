@@ -112,12 +112,15 @@ void main() {
                                  gis.IMAGESIZE_MEDIUM);
       imageSearch.setResultSetSize(Math.min(MAX_IMAGES_PER_PAGE, numImages));
       imageSearch.setSearchCompleteCallback(null, function(query, callback) {
-        // TODO check if page out of range (how?)
         for (var i = 0; 
              stack.length < numImages && i < MAX_IMAGES_PER_PAGE; 
              i++) {
           if (imageSearch.results[i]) {
-            stack.push(imageSearch.results[i].url);
+            // note: .url fetches the image from some website and sometimes
+            // redirects to an html page instead of an image...
+            // use .tbUrl (low-res version hosted by google) for consistency.
+            // TODO: find a way to handle .url weirdness
+            stack.push(imageSearch.results[i].tbUrl);
           }
         }
 
