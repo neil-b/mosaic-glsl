@@ -158,6 +158,8 @@ void main() {
     // get images
     var query1 = getURLParameter('q1') || 'space';
     var query2 = getURLParameter('q2') || 'nature';
+    $('#query1').val(query1);
+    $('#query2').val(query2);
     var queries = [query1, query2];
     var downloadStack = [];
     var numImages = 9; // any changes to this need to be reflected in the shader
