@@ -29,7 +29,9 @@ void main() {
 precision highp float;
 precision highp int;
 
-#define MAX_NUM_IMAGES 9
+// 32 samplers is actually the max number of samplers in any glsl program.
+// 31 is our max here, since one other sampler is used for the superTile
+#define MAX_NUM_IMAGES 31
 
 uniform float time;
 uniform vec2 resolution;
@@ -47,7 +49,7 @@ uniform float zoomMax;
 uniform vec2 zoomPosition;
 
 void main() {
-  const vec2 TILE_SIZE = vec2(0.02, 0.02); 
+  const vec2 TILE_SIZE = vec2(0.01, 0.01); 
   float zoomPoly = 1.;//zoom * zoom * zoom; // level of zoom 
   vec2 nPos = gl_FragCoord.xy / resolution.xy; // coordinate of fragment from (0,0) to (1,1), wrt entire renderable area
   vec2 zPos = vec2(nPos.x, nPos.y) / zoomPoly + zoomPosition; // coordinate of the fragment in the zoomed space
@@ -99,139 +101,7 @@ void main() {
   }
 }
   </script>
-  <script>
-    // -- google image crawler --
 
-    // gets image urls from google images and stores them in stack
-    // google.load() needs to first be called before calling this
-    var getGISURLS = function(stack, query, numImages, callback) {
-      var MAX_IMAGES_PER_PAGE = 8; // api's max results per page is 8
-      var gis = google.search.ImageSearch;
-      var imageSearch = new google.search.ImageSearch();
-      imageSearch.setRestriction(gis.RESTRICT_IMAGESIZE,
-                                 gis.IMAGESIZE_MEDIUM);
-      imageSearch.setResultSetSize(Math.min(MAX_IMAGES_PER_PAGE, numImages));
-      imageSearch.setSearchCompleteCallback(null, function(query, callback) {
-        for (var i = 0; 
-             stack.length < numImages && i < MAX_IMAGES_PER_PAGE; 
-             i++) {
-          if (imageSearch.results[i]) {
-            // note: .url fetches the image from some website and sometimes
-            // redirects to an html page instead of an image...
-            // use .tbUrl (low-res version hosted by google) for consistency.
-            // TODO: find a way to handle .url weirdness
-            stack.push(imageSearch.results[i].tbUrl);
-          }
-        }
-
-        if (stack.length >= numImages) {
-          callback();
-        }
-        else { // turn page if we have yet to get enough images
-          var cursor = imageSearch.cursor;
-          if (cursor) {
-            var numPagesAvailable = cursor.pages.length;
-            console.log('turn pg', cursor.currentPageIndex+1, '/', numPagesAvailable);
-            if (cursor.currentPageIndex+1 < numPagesAvailable) {
-              imageSearch.gotoPage(cursor.currentPageIndex+1);
-            }
-            else {
-              alert('not enough pages');
-            }
-          }
-          else callback();
-        }
-      }, [query, callback]);
-      imageSearch.execute(query);
-    };
-
-
-    // from http://stackoverflow.com/questions/1403888/get-escaped-url-parameter
-    function getURLParameter(name) {
-      var ret = decodeURI(
-        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
-      );
-      if (ret == 'null') return undefined;
-      else return ret;
-    }
-
-    // get images
-    var query1 = getURLParameter('q1') || 'space';
-    var query2 = getURLParameter('q2') || 'nature';
-    $('#query1').val(query1);
-    $('#query2').val(query2);
-    var queries = [query1, query2];
-    var downloadStack = [];
-    var numImages = 9; // any changes to this need to be reflected in the shader
-
-    console.log('begin gis search...', queries);
-    var queryStacks = [[], []];
-    google.load('search', '1');
-    google.setOnLoadCallback(function() {
-      getGISURLS(queryStacks[0], queries[0], numImages, function() {
-        getGISURLS(queryStacks[1], queries[1], numImages, function() {
-          // once we have our urls, send them to the server for rehosting
-          var socket = io.connect('/', {reconnect: false});
-          socket.emit('reuploadRequest', queries, queryStacks);
-
-          console.log('waiting for reply from server...');
-          // once the server tells us it has finished...
-          socket.on('reuploadComplete', function(successfulReuploads) {
-            $(document).trigger('allImagesReady', [queries, successfulReuploads]);
-          });
-        });
-      });
-    });
-/*
-    google.load('search', '1');
-    google.setOnLoadCallback(function() {
-      for (var qIndex = 0; qIndex < queries.length; qIndex++) {
-        var query = queries[qIndex];
-        var gis = google.search.ImageSearch;
-        var colors = [gis.COLOR_BLACK, 
-                      gis.COLOR_BLUE,
-                      gis.COLOR_BROWN,
-                      gis.COLOR_GRAY,
-                      gis.COLOR_GREEN,
-                      gis.COLOR_ORANGE,
-                      gis.COLOR_PINK,
-                      gis.COLOR_PURPLE,
-                      gis.COLOR_RED,
-                      gis.COLOR_TEAL,
-                      gis.COLOR_WHITE,
-                      gis.COLOR_YELLOW];
-        images[query] = {};
-        function search(queries, queryIndex, colors, colorIndex) {
-          var imageSearch = new google.search.ImageSearch();
-          var color = colors[colorIndex];
-          console.log(color);
-          imageSearch.setRestriction(gis.RESTRICT_IMAGESIZE,
-                                    gis.IMAGESIZE_MEDIUM);
-          imageSearch.setRestriction(gis.RESTRICT_COLORFILTER, color);
-          imageSearch.setResultSetSize(1);
-          imageSearch.setSearchCompleteCallback(this, function (color, query, qIndex, images) {
-            if (imageSearch.results && imageSearch.results.length > 0) {
-              var results = imageSearch.results;
-              for (var i = 0; i < results.length; i++) {
-                $('body').append('<img src="' + results[i].tbUrl + '"></img>');
-                console.log(color, results[i].tbUrl);
-                images[query][color] = results[i].tbUrl;
-              }
-            }
-  
-            if (colorIndex + 1 < colors.length) {
-              search(queries, queryIndex, colors, colorIndex + 1);
-            }
-            else if (qIndex + 1 == queries.length) { // if each color + each query has completed
-              $(document).trigger('allImagesRetrieved', images);
-            }
-          }, [color, query, qIndex, images]);
-          imageSearch.execute(query);
-        }
-        search(colors, 0);
-      }
-    });*/
-  </script>
   <script>
     $('#searchButton').click(function() {
       console.log($('#query1').val(), $('#query2').val());
@@ -301,8 +171,10 @@ void main() {
 
       // image loading and preprocessing
       // placeholder values until we calculate actual averages
-      for (var i = 0; i < numImages; i++) {
+      for (var i = 0; i < successfulReuploads[0].length; i++) {
         superTileData.averages.push([0.5, 0.5, 0.5]);
+      }
+      for (var i = 0; i < successfulReuploads[1].length; i++) {
         subTileData.averages.push([0.5, 0.5, 0.5]);
       }
 
@@ -320,25 +192,57 @@ void main() {
           texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
           textures.push(texture);
 
+          // from http://stackoverflow.com/questions/2541481/get-average-color-of-image-via-javascript
+          function getAverageRGB(imgEl) {
+            var blockSize = 5, // only visit every 5 pixels
+              defaultRGB = {r:0,g:0,b:0}, // for non-supporting envs
+              canvas = document.createElement('canvas'),
+              context = canvas.getContext && canvas.getContext('2d'),
+              data, width, height,
+              i = -4,
+              length,
+              rgb = {r:0,g:0,b:0},
+              count = 0;
+  
+            if (!context) {
+              return defaultRGB;
+            }
+
+            height = canvas.height = imgEl.naturalHeight || imgEl.offsetHeight || imgEl.height;
+            width = canvas.width = imgEl.naturalWidth || imgEl.offsetWidth || imgEl.width;
+
+            context.drawImage(imgEl, 0, 0);
+
+            try {
+              data = context.getImageData(0, 0, width, height);
+            } catch(e) {
+              /* security error, img on diff domain */
+              return defaultRGB;
+            }
+
+            length = data.data.length;
+
+            while ( (i += blockSize * 4) < length ) {
+              ++count;
+              rgb.r += data.data[i];
+              rgb.g += data.data[i+1];
+              rgb.b += data.data[i+2];
+            }
+
+            // ~~ used to floor values
+            rgb.r = ~~(rgb.r/count);
+            rgb.g = ~~(rgb.g/count);
+            rgb.b = ~~(rgb.b/count);
+
+            return rgb;
+          }
+
           // calculate average color (async)
-          (function(i, queryIndex) {
-            var img = new Image();
+          (function(i, queryIndex, img) {
             img.src = url;
             img.onload = function() {
-              var context = document.createElement('canvas').getContext('2d');
-              context.drawImage(this, 0, 0);
-              var data = context.getImageData(0, 0, this.width, this.height).data;
-
-              var average = [0.0, 0.0, 0.0];
-              for (var j = 0; j < data.length; j += 4) {
-                average[0] += data[j + 0];
-                average[1] += data[j + 1];
-                average[2] += data[j + 2];
-                // skip alpha channel
-              }
-              average[0] /= (data.length / 4.0 * 255.0);
-              average[1] /= (data.length / 4.0 * 255.0);
-              average[2] /= (data.length / 4.0 * 255.0);
+              var averageRGB = getAverageRGB(this);
+              var average = [averageRGB.r / 255.0, averageRGB.g / 255.0, averageRGB.b / 255.0];
 
               if (queryIndex == 0) {
                 superTileData.averages[i] = average;
@@ -346,8 +250,9 @@ void main() {
               else if (queryIndex == 1) {
                 subTileData.averages[i] = average;
               }
+              console.log(superTileData.averages);
             }
-          })(i, queryIndex);
+          })(i, queryIndex, new Image());
         }
         if (queryIndex == 0) {
           superTileData.textures = textures;
@@ -430,7 +335,7 @@ void main() {
             var context = canvas.getContext('2d');
             context.drawImage(renderer.domElement, 0, 0);
             var pixelData = context.getImageData(0, renderer.domElement.height-1, 1, 1).data;
-            var newSuperTileIndex = Math.floor(pixelData[0] / 255 * numImages + 0.5); 
+            var newSuperTileIndex = Math.floor(pixelData[0] / 255 * superTileData.textures.length + 0.5); 
 
             uniforms.superTileTexture.value = superTileData.textures[newSuperTileIndex];
             uniforms.subTileTextures.value = subTileData.textures;
@@ -445,5 +350,158 @@ void main() {
       }
       render();
     })
+  </script>
+  <script>
+    // -- google image crawler --
+
+    // gets image urls from google images and stores them in stack
+    // google.load() needs to first be called before calling this
+    var getGISURLS = function(stack, query, numImages, callback) {
+      var MAX_IMAGES_PER_PAGE = 8; // api's max results per page is 8
+      var gis = google.search.ImageSearch;
+      var imageSearch = new google.search.ImageSearch();
+      imageSearch.setRestriction(gis.RESTRICT_IMAGESIZE,
+                                 gis.IMAGESIZE_MEDIUM);
+      imageSearch.setResultSetSize(Math.min(MAX_IMAGES_PER_PAGE, numImages));
+      imageSearch.setSearchCompleteCallback(null, function(query, callback) {
+        for (var i = 0; 
+             stack.length < numImages && i < MAX_IMAGES_PER_PAGE; 
+             i++) {
+          if (imageSearch.results[i]) {
+            // note: .url fetches the image from some website and sometimes
+            // redirects to an html page instead of an image...
+            // use .tbUrl (low-res version hosted by google) for consistency.
+            // TODO: find a way to handle .url weirdness
+            stack.push(imageSearch.results[i].tbUrl);
+          }
+        }
+
+        if (stack.length >= numImages) {
+          callback();
+        }
+        else { // turn page if we have yet to get enough images
+          var cursor = imageSearch.cursor;
+          if (cursor) {
+            var numPagesAvailable = cursor.pages.length;
+            console.log('turn pg', cursor.currentPageIndex+1, '/', numPagesAvailable);
+            if (cursor.currentPageIndex+1 < numPagesAvailable) {
+              imageSearch.gotoPage(cursor.currentPageIndex+1);
+            }
+            else {
+              alert('not enough pages');
+            }
+          }
+          else callback();
+        }
+      }, [query, callback]);
+      imageSearch.execute(query);
+    };
+
+
+    // from http://stackoverflow.com/questions/1403888/get-escaped-url-parameter
+    function getURLParameter(name) {
+      var ret = decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+      );
+      if (ret == 'null') return undefined;
+      else return ret;
+    }
+
+    // get images
+    var staticFolder = getURLParameter('staticFolder') || undefined;
+    if (staticFolder) {
+      var query1 = staticFolder;
+      var query2 = staticFolder;
+    }
+    else {
+      var query1 = getURLParameter('q1') || 'space';
+      var query2 = getURLParameter('q2') || 'nature';
+    }
+
+    $('#query1').val(query1);
+    $('#query2').val(query2);
+    var queries = [query1, query2];
+
+    // "offline" version. get images from specified directory instead of through node server + google
+    if (staticFolder) {
+      console.log('using static folder');
+      $('#queryEditor').hide();
+      var successfulReuploads = [];
+      for (var i = 0; i < 31; i++) {
+        successfulReuploads.push(i);
+      }
+      $(document).trigger('allImagesReady', [queries, [successfulReuploads, successfulReuploads]]); 
+    }
+    else {
+      console.log('begin gis search...', queries);
+      var downloadStack = [];
+      var numImages = 9; // any changes to this need to be reflected in the shader
+      var queryStacks = [[], []];
+      google.load('search', '1');
+      google.setOnLoadCallback(function() {
+        getGISURLS(queryStacks[0], queries[0], numImages, function() {
+          getGISURLS(queryStacks[1], queries[1], numImages, function() {
+            // once we have our urls, send them to the server for rehosting
+            var socket = io.connect('/', {reconnect: false});
+            socket.emit('reuploadRequest', queries, queryStacks);
+  
+            console.log('waiting for reply from server...');
+            // once the server tells us it has finished...
+            socket.on('reuploadComplete', function(successfulReuploads) {
+              $(document).trigger('allImagesReady', [queries, successfulReuploads]);
+            });
+          });
+        });
+      });
+    }
+/*
+    google.load('search', '1');
+    google.setOnLoadCallback(function() {
+      for (var qIndex = 0; qIndex < queries.length; qIndex++) {
+        var query = queries[qIndex];
+        var gis = google.search.ImageSearch;
+        var colors = [gis.COLOR_BLACK, 
+                      gis.COLOR_BLUE,
+                      gis.COLOR_BROWN,
+                      gis.COLOR_GRAY,
+                      gis.COLOR_GREEN,
+                      gis.COLOR_ORANGE,
+                      gis.COLOR_PINK,
+                      gis.COLOR_PURPLE,
+                      gis.COLOR_RED,
+                      gis.COLOR_TEAL,
+                      gis.COLOR_WHITE,
+                      gis.COLOR_YELLOW];
+        images[query] = {};
+        function search(queries, queryIndex, colors, colorIndex) {
+          var imageSearch = new google.search.ImageSearch();
+          var color = colors[colorIndex];
+          console.log(color);
+          imageSearch.setRestriction(gis.RESTRICT_IMAGESIZE,
+                                    gis.IMAGESIZE_MEDIUM);
+          imageSearch.setRestriction(gis.RESTRICT_COLORFILTER, color);
+          imageSearch.setResultSetSize(1);
+          imageSearch.setSearchCompleteCallback(this, function (color, query, qIndex, images) {
+            if (imageSearch.results && imageSearch.results.length > 0) {
+              var results = imageSearch.results;
+              for (var i = 0; i < results.length; i++) {
+                $('body').append('<img src="' + results[i].tbUrl + '"></img>');
+                console.log(color, results[i].tbUrl);
+                images[query][color] = results[i].tbUrl;
+              }
+            }
+  
+            if (colorIndex + 1 < colors.length) {
+              search(queries, queryIndex, colors, colorIndex + 1);
+            }
+            else if (qIndex + 1 == queries.length) { // if each color + each query has completed
+              $(document).trigger('allImagesRetrieved', images);
+            }
+          }, [color, query, qIndex, images]);
+          imageSearch.execute(query);
+        }
+        search(colors, 0);
+      }
+    });*/
   </script>
 </html>
