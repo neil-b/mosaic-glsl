@@ -3,7 +3,11 @@
   <script src="./three.min.js"></script>
   <script src="socket.io/socket.io.js"></script>
   <script src="https://www.google.com/jsapi"></script>
-  <body style="width: 100%; height: 100%; margin: 0px;">
+  <body style="width:100%; height:100%; margin:0px;">
+    <!-- dom elements for webcam texture -->
+    <video id="monitor" autoplay width="160" height="120" stylfe="visibility:hidden; position:absolute"></video>
+    <canvas id="videoImage" width="160" height="120" stylfe="visibility:hidden; position:absolute"></canvas> 
+
     <div id="stage" width="100%" height="100%"></div>
     <div id="queryEditor" style="padding:0.2em; position:fixed; left:1em; top:1em; background-color:#333333">
       <input type="text" id="query1" placeholder="first query" value="space"><br>
@@ -29,9 +33,10 @@ void main() {
 precision highp float;
 precision highp int;
 
-// 32 samplers is actually the max number of samplers in any glsl program.
-// 31 is our max here, since one other sampler is used for the superTile
-#define MAX_NUM_IMAGES 31
+// each gpu has their own max number of samplers per shader
+// my desktop supports 32, while my macbook air only supports 16.
+// need to find out what an appropriate lower bound is
+#define MAX_NUM_IMAGES 15
 
 uniform float time;
 uniform vec2 resolution;
@@ -49,7 +54,7 @@ uniform float zoomMax;
 uniform vec2 zoomPosition;
 
 void main() {
-  const vec2 TILE_SIZE = vec2(0.01, 0.01); 
+  const vec2 TILE_SIZE = vec2(0.02, 0.02); 
   float zoomPoly = 1.;//zoom * zoom * zoom; // level of zoom 
   vec2 nPos = gl_FragCoord.xy / resolution.xy; // coordinate of fragment from (0,0) to (1,1), wrt entire renderable area
   vec2 zPos = vec2(nPos.x, nPos.y) / zoomPoly + zoomPosition; // coordinate of the fragment in the zoomed space
@@ -101,7 +106,6 @@ void main() {
   }
 }
   </script>
-
   <script>
     $('#searchButton').click(function() {
       console.log($('#query1').val(), $('#query2').val());
@@ -135,7 +139,7 @@ void main() {
     }
 
     // start the mosaic once the reuploaded images are ready
-    $(document).on('allImagesReady', function(e, queries, successfulReuploads) {
+    $(document).on('allImagesReady', function(e, queries, successfulReuploads, useCamera) {
       for (var i = 0; i < queries.length; i++) {
         if (successfulReuploads[i].length == 0) {
           alert('Not enough images were found for query "' + queries[i] + '"');
@@ -146,9 +150,15 @@ void main() {
       console.log('starting mosaic', queries, successfulReuploads);
       // -- graphics code --
       // -- set up --
-      var scene = new THREE.Scene();
-      var camera = undefined; 
-      var renderer = new THREE.WebGLRenderer({antialias: true});
+      try {
+        var scene = new THREE.Scene();
+        var camera = undefined; 
+        var renderer = new THREE.WebGLRenderer({antialias: true});
+        // webcam vars
+        var video, videoTexture, videoImage, videoImageContext;
+      } catch(e) {
+        alert('There was a problem creating the webgl context.');
+      }
       var timeStarted = new Date();
 
       function TileData() {
@@ -216,7 +226,7 @@ void main() {
             try {
               data = context.getImageData(0, 0, width, height);
             } catch(e) {
-              /* security error, img on diff domain */
+              // security error, img on diff domain 
               return defaultRGB;
             }
 
@@ -250,7 +260,6 @@ void main() {
               else if (queryIndex == 1) {
                 subTileData.averages[i] = average;
               }
-              console.log(superTileData.averages);
             }
           })(i, queryIndex, new Image());
         }
@@ -262,13 +271,53 @@ void main() {
         }
       } 
 
+      // begin webcam code
+      // bits of code here from http://stemkoski.github.io/Three.js/Webcam-Texture.html
+      if (useCamera) {
+        // initialize camera
+        navigator.getUserMedia = navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+        window.URL = window.URL || window.webkitURL;
+
+        var camVideo = $('#monitor')[0];
+        if (!navigator.getUserMedia) {
+          alert('Your browser does not have webcam support');
+        }
+        else {
+          navigator.getUserMedia({video: true}, 
+          function(stream) { // on success
+            if (window.URL) {
+              camVideo.src = window.URL.createObjectURL(stream);
+            }
+            else { // Opera
+              camVideo.src = stream;
+            }
+            camVideo.onerror = function(error) {
+              stream.stop();
+            }
+          },
+          function(error) { // on failure
+            alert('webcam error:', error);
+          });
+        }
+
+        // get cam texture
+        video = document.getElementById('monitor');
+    
+        videoImage = document.getElementById('videoImage');
+        videoImageContext = videoImage.getContext('2d');
+        videoImageContext.fillStyle = '#cccccc'; // background color if no video present
+        videoImageContext.fillRect(0, 0, videoImage.width, videoImage.height);
+
+        videoTexture = new THREE.Texture(videoImage);
+        videoTexture.minFilter = THREE.LinearFilter;
+        videoTexture.magFilter = THREE.LinearFilter;
+      }
+
       // create uniforms for the textures
       uniforms.superTileTexture = {type: 't', value: superTileData.textures[0]};
       uniforms.subTileTextures = {type: 'tv', value: subTileData.textures};
       uniforms.subTileAverages = {type: 'fv', value: flatten(subTileData.averages)};
       uniforms.numSubImages = {type: 'i', value: subTileData.textures.length};
-
-      console.log(superTileData.textures.length, subTileData.textures.length);
 
       $('#stage').append(renderer.domElement);
 
@@ -310,7 +359,15 @@ void main() {
       // -- begin rendering --
       function render() {
         requestAnimationFrame(render);
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          videoImageContext.drawImage(video, 0, 0, videoImage.width, videoImage.height);
+          if (videoTexture) {
+            videoTexture.needsUpdate = true;
+          }
+        }
         renderer.render(scene, camera);
+
         function update() {
           var prevTimeElapsed = uniforms.time.value;
           var timeElapsed = (new Date()) - timeStarted;
@@ -342,6 +399,10 @@ void main() {
             uniforms.subTileAverages.value = flatten(subTileData.averages);
 
             uniforms.numSubImages.value = subTileData.textures.length;
+
+            if (videoTexture) {
+              uniforms.superTileTexture.value = videoTexture;
+            }
           }
           var zoomPos = 0;
           uniforms.zoomPosition.value = new THREE.Vector2(zoomPos, zoomPos);
@@ -408,6 +469,7 @@ void main() {
     }
 
     // get images
+    var useCamera = getURLParameter('useCamera') || false;
     var staticFolder = getURLParameter('staticFolder') || undefined;
     if (staticFolder) {
       var query1 = staticFolder;
@@ -416,6 +478,10 @@ void main() {
     else {
       var query1 = getURLParameter('q1') || 'space';
       var query2 = getURLParameter('q2') || 'nature';
+
+      if (query1 == 'me' && query2 == 'me') {
+        alert('at least one of the fields must be a query');
+      }
     }
 
     $('#query1').val(query1);
@@ -426,11 +492,13 @@ void main() {
     if (staticFolder) {
       console.log('using static folder');
       $('#queryEditor').hide();
+      var out;
       var successfulReuploads = [];
-      for (var i = 0; i < 31; i++) {
+      for (var i = 0; i < 15; i++) {
         successfulReuploads.push(i);
       }
-      $(document).trigger('allImagesReady', [queries, [successfulReuploads, successfulReuploads]]); 
+      out = [successfulReuploads, successfulReuploads];
+      $(document).trigger('allImagesReady', [queries, out, useCamera]); 
     }
     else {
       console.log('begin gis search...', queries);
@@ -448,7 +516,7 @@ void main() {
             console.log('waiting for reply from server...');
             // once the server tells us it has finished...
             socket.on('reuploadComplete', function(successfulReuploads) {
-              $(document).trigger('allImagesReady', [queries, successfulReuploads]);
+              $(document).trigger('allImagesReady', [queries, successfulReuploads, useCamera]);
             });
           });
         });
