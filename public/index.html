@@ -5,8 +5,8 @@
   <script src="https://www.google.com/jsapi"></script>
   <body style="width:100%; height:100%; margin:0px;">
     <!-- dom elements for webcam texture -->
-    <video id="monitor" autoplay width="160" height="120" stylfe="visibility:hidden; position:absolute"></video>
-    <canvas id="videoImage" width="160" height="120" stylfe="visibility:hidden; position:absolute"></canvas> 
+    <video id="monitor" autoplay width="160" height="120" style="visibility:hidden; position:absolute"></video>
+    <canvas id="videoImage" width="160" height="120" style="visibility:hidden; position:absolute"></canvas> 
 
     <div id="stage" width="100%" height="100%"></div>
     <div id="queryEditor" style="padding:0.2em; position:fixed; left:1em; top:1em; background-color:#333333">
@@ -155,7 +155,7 @@ void main() {
         var camera = undefined; 
         var renderer = new THREE.WebGLRenderer({antialias: true});
         // webcam vars
-        var video, videoTexture, videoImage, videoImageContext;
+        var video, videoTexture, videoImage, videoImageContext, webcamReady = false;
       } catch(e) {
         alert('There was a problem creating the webgl context.');
       }
@@ -284,7 +284,7 @@ void main() {
         }
         else {
           navigator.getUserMedia({video: true}, 
-          function(stream) { // on success
+          function(stream) { // on success (user clicks 'allow')
             if (window.URL) {
               camVideo.src = window.URL.createObjectURL(stream);
             }
@@ -294,6 +294,7 @@ void main() {
             camVideo.onerror = function(error) {
               stream.stop();
             }
+            webcamReady = true;
           },
           function(error) { // on failure
             alert('webcam error:', error);
@@ -360,14 +361,15 @@ void main() {
       function render() {
         requestAnimationFrame(render);
 
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        // update the webcam texture when we can
+        if (webcamReady && video.readyState === video.HAVE_ENOUGH_DATA) {
           videoImageContext.drawImage(video, 0, 0, videoImage.width, videoImage.height);
           if (videoTexture) {
             videoTexture.needsUpdate = true;
           }
         }
-        renderer.render(scene, camera);
 
+        renderer.render(scene, camera);
         function update() {
           var prevTimeElapsed = uniforms.time.value;
           var timeElapsed = (new Date()) - timeStarted;
@@ -400,7 +402,7 @@ void main() {
 
             uniforms.numSubImages.value = subTileData.textures.length;
 
-            if (videoTexture) {
+            if (webcamReady) {
               uniforms.superTileTexture.value = videoTexture;
             }
           }
