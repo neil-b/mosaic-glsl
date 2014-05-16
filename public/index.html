@@ -164,9 +164,12 @@ void main() {
       function TileData() {
         this.textures = undefined;
         this.averages = [];
+        this.atlas = undefined; // one big texture containing all textures
       }
       var superTileData = new TileData();
       var subTileData = new TileData();
+      var ATLAS_WIDTH = 4096, ATLAS_HEIGHT = 4096;
+      var ATLAS_SUB_WIDTH = 512, ATLAS_SUB_HEIGHT = 512;
 
       // -- initialize basic uniforms --
       var uniforms = {
@@ -179,7 +182,6 @@ void main() {
           zoomPosition: {type: 'v2', value: new THREE.Vector2(0, 0)},
       };
 
-      // image loading and preprocessing
       // placeholder values until we calculate actual averages
       for (var i = 0; i < successfulReuploads[0].length; i++) {
         superTileData.averages.push([0.5, 0.5, 0.5]);
@@ -189,6 +191,11 @@ void main() {
       }
 
       // load the reuploaded images and calculate average color
+      var imagesLeft = 0; // number of images we have left to load
+      for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+        imagesLeft += successfulReuploads[queryIndex].length;
+      }
+
       for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
         var query = queries[queryIndex];
         var textures = [];
@@ -197,71 +204,17 @@ void main() {
         for (var i = 0; i < successfulReuploads[queryIndex].length; i++) {
           var textureIndex = successfulReuploads[queryIndex][i];
           var url = 'reup/' + query + '/' + textureIndex;
-          // get texture (sync)
-          var texture = new THREE.ImageUtils.loadTexture(url);
+          // get texture (async)
+          var texture = new THREE.ImageUtils.loadTexture(url, undefined, function() {
+            // on loaded: 
+            imagesLeft--;
+            if (imagesLeft == 0) {
+              preprocessTiles(superTileData);
+              preprocessTiles(subTileData);
+            }
+          });
           texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
           textures.push(texture);
-
-          // from http://stackoverflow.com/questions/2541481/get-average-color-of-image-via-javascript
-          function getAverageRGB(imgEl) {
-            var blockSize = 5, // only visit every 5 pixels
-              defaultRGB = {r:0,g:0,b:0}, // for non-supporting envs
-              canvas = document.createElement('canvas'),
-              context = canvas.getContext && canvas.getContext('2d'),
-              data, width, height,
-              i = -4,
-              length,
-              rgb = {r:0,g:0,b:0},
-              count = 0;
-  
-            if (!context) {
-              return defaultRGB;
-            }
-
-            height = canvas.height = imgEl.naturalHeight || imgEl.offsetHeight || imgEl.height;
-            width = canvas.width = imgEl.naturalWidth || imgEl.offsetWidth || imgEl.width;
-
-            context.drawImage(imgEl, 0, 0);
-
-            try {
-              data = context.getImageData(0, 0, width, height);
-            } catch(e) {
-              // security error, img on diff domain 
-              return defaultRGB;
-            }
-
-            length = data.data.length;
-
-            while ( (i += blockSize * 4) < length ) {
-              ++count;
-              rgb.r += data.data[i];
-              rgb.g += data.data[i+1];
-              rgb.b += data.data[i+2];
-            }
-
-            // ~~ used to floor values
-            rgb.r = ~~(rgb.r/count);
-            rgb.g = ~~(rgb.g/count);
-            rgb.b = ~~(rgb.b/count);
-
-            return rgb;
-          }
-
-          // calculate average color (async)
-          (function(i, queryIndex, img) {
-            img.src = url;
-            img.onload = function() {
-              var averageRGB = getAverageRGB(this);
-              var average = [averageRGB.r / 255.0, averageRGB.g / 255.0, averageRGB.b / 255.0];
-
-              if (queryIndex == 0) {
-                superTileData.averages[i] = average;
-              }
-              else if (queryIndex == 1) {
-                subTileData.averages[i] = average;
-              }
-            }
-          })(i, queryIndex, new Image());
         }
         if (queryIndex == 0) {
           superTileData.textures = textures;
@@ -270,6 +223,65 @@ void main() {
           subTileData.textures = textures;
         }
       } 
+
+      function preprocessTiles(tileData) {
+
+        // modified from http://stackoverflow.com/questions/2541481/get-average-color-of-image-via-javascript
+        function getAverageRGB(texture) {
+          var average = [0.5, 0.5, 0.5];
+          var canvas = document.createElement('canvas');
+          var context = canvas.getContext('2d');
+          var data = undefined;
+          var blockSize = 5; // sample every X pixels
+          var count = 0;
+
+          canvas.width = texture.image.width;
+          canvas.height = texture.image.height;
+          context.drawImage(texture.image, 0, 0);
+          data = context.getImageData(0, 0, canvas.width, canvas.height);
+
+          for (var i = 0; (i + blockSize * 4) < data.data.length; i += blockSize * 4) {
+            average[0] += data.data[i];
+            average[1] += data.data[i+1];
+            average[2] += data.data[i+2];
+            count++;
+          }
+
+          average[0] = Math.floor(average[0] / count) / 255.0;
+          average[1] = Math.floor(average[1] / count) / 255.0;
+          average[2] = Math.floor(average[2] / count) / 255.0;
+
+          return average;
+        }
+
+        function generateAtlas(textures, atlasWidth, atlasHeight, subWidth, subHeight) {
+          var tilesPerRow = Math.floor(atlasWidth / subWidth);
+          var tilesPerColumn = Math.floor(atlasWidth / subHeight);
+          if (atlasWidth % subWidth != 0 || atlasHeight % subHeight != 0) {
+            console.warn('Atlas size does not evenly divide into subsize');
+          }
+          if (textures.length > tilesPerRow * tilesPerColumn) {
+            throw new Error('Atlas is too small to hold the given textures');
+          }
+
+          var canvas = document.createElement('canvas');
+          var context = canvas.getContext('2d');
+          canvas.width = atlasHeight; 
+          canvas.height = atlasWidth;
+
+          for (var i = 0; i < textures.length; i++) {
+            var tileX = (i * subWidth) % atlasWidth;
+            var tileY = Math.floor((i * subWidth) / atlasWidth) * subHeight;
+            context.drawImage(textures[i].image, tileX, tileY, subWidth, subHeight);
+          }
+          return new THREE.Texture(canvas);
+        }
+
+        for (var i = 0; i < tileData.textures.length; i++) {
+          tileData.averages[i] = getAverageRGB(tileData.textures[i]);
+        }
+        tileData.atlas = generateAtlas(tileData.textures, ATLAS_WIDTH, ATLAS_HEIGHT, ATLAS_SUB_WIDTH, ATLAS_SUB_HEIGHT);
+      }
 
       // begin webcam code
       // bits of code here from http://stemkoski.github.io/Three.js/Webcam-Texture.html
