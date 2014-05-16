@@ -80,7 +80,7 @@ vec2 getAtlasCoord(int index, vec2 tPos) {
 }
 
 void main() {
-  const vec2 TILE_SIZE = vec2(0.04, 0.04); 
+  const vec2 TILE_SIZE = vec2(0.02, 0.02); 
   float zoomPoly = 1.;//zoom * zoom * zoom; // level of zoom 
   vec2 nPos = gl_FragCoord.xy / resolution.xy; // coordinate of fragment from (0,0) to (1,1), wrt entire renderable area
   vec2 zPos = vec2(nPos.x, nPos.y) / zoomPoly + zoomPosition; // coordinate of the fragment in the zoomed space
@@ -304,8 +304,6 @@ void main() {
             context.drawImage(textures[i].image, tileX, tileY, subWidth, subHeight);
           }
 
-          document.body.appendChild(canvas);
-
           var ret = new THREE.Texture(canvas);
           ret.wrapS = ret.wrapT = THREE.RepeatWrapping;
           return ret;
@@ -443,15 +441,16 @@ void main() {
             var pixelData = context.getImageData(0, renderer.domElement.height-1, 1, 1).data;
             var newSuperTileIndex = Math.floor(pixelData[0] / 255 * superTileData.textures.length + 0.5); 
 
-            uniforms.superTileTexture.value = superTileData.textures[newSuperTileIndex];
+            if (!webcamReady) {
+              uniforms.superTileTexture.value = superTileData.textures[newSuperTileIndex];
+            }
+            else {
+              uniforms.superTileTexture.value = videoTexture;
+            }
             uniforms.subTileAtlas.value = subTileData.atlas;
             uniforms.subTileAverages.value = flatten(subTileData.averages);
 
             uniforms.numSubImages.value = subTileData.textures.length;
-
-            if (webcamReady) {
-              uniforms.superTileTexture.value = videoTexture;
-            }
           }
           var zoomPos = 0;
           uniforms.zoomPosition.value = new THREE.Vector2(zoomPos, zoomPos);
@@ -543,7 +542,7 @@ void main() {
       $('#queryEditor').hide();
       var out;
       var successfulReuploads = [];
-      for (var i = 0; i < 32; i++) {
+      for (var i = 0; i < 64; i++) {
         successfulReuploads.push(i);
       }
       out = [successfulReuploads, successfulReuploads];
@@ -561,7 +560,7 @@ void main() {
             // once we have our urls, send them to the server for rehosting
             var socket = io.connect('/', {reconnect: false});
             socket.emit('reuploadRequest', queries, queryStacks);
-  
+
             console.log('waiting for reply from server...');
             // once the server tells us it has finished...
             socket.on('reuploadComplete', function(successfulReuploads) {
