@@ -8,12 +8,13 @@
     <video id="monitor" autoplay width="160" height="120" style="visibility:hidden; position:absolute"></video>
     <canvas id="videoImage" width="160" height="120" style="visibility:hidden; position:absolute"></canvas> 
 
-    <div id="stage" width="100%" height="100%"></div>
+    <div id="stage" hidden width="100%" height="100%"></div>
     <div id="queryEditor" style="padding:0.2em; position:fixed; left:1em; top:1em; background-color:#333333">
       <input type="text" id="query1" placeholder="first query" value="space"><br>
       <input type="text" id="query2" placeholder="second query" value="nature"><br>
       <button id="searchButton">Go</button>
     </div>
+    <img id="spinner" src="./spinner.gif" style="background:#ffffff; background-size:100% 100%; position:absolute; left:50%; top:50%;"></img>
   </body>
   <script id="vertexShader" type="x-shader/x-vertex">
 /* Vertex shader */
@@ -238,8 +239,7 @@ void main() {
             // on loaded: 
             imagesLeft--;
             if (imagesLeft == 0) {
-              preprocessTiles(superTileData);
-              preprocessTiles(subTileData);
+              preprocessTiles([superTileData, subTileData]);
             }
           });
           texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -253,7 +253,7 @@ void main() {
         }
       } 
 
-      function preprocessTiles(tileData) {
+      function preprocessTiles(tileDatas) {
 
         // modified from http://stackoverflow.com/questions/2541481/get-average-color-of-image-via-javascript
         function getAverageRGB(texture) {
@@ -309,11 +309,21 @@ void main() {
           return ret;
         }
 
-        for (var i = 0; i < tileData.textures.length; i++) {
-          tileData.averages[i] = getAverageRGB(tileData.textures[i]);
+        for (var tileDataIndex = 0; tileDataIndex < tileDatas.length; tileDataIndex++) {
+          var tileData = tileDatas[tileDataIndex];
+          for (var i = 0; i < tileData.textures.length; i++) {
+            tileData.averages[i] = getAverageRGB(tileData.textures[i]);
+          }
+          tileData.atlas = generateAtlas(tileData.textures, ATLAS_WIDTH, ATLAS_HEIGHT, ATLAS_SUB_WIDTH, ATLAS_SUB_HEIGHT);
+          tileData.atlas.needsUpdate = true;
         }
-        tileData.atlas = generateAtlas(tileData.textures, ATLAS_WIDTH, ATLAS_HEIGHT, ATLAS_SUB_WIDTH, ATLAS_SUB_HEIGHT);
-        tileData.atlas.needsUpdate = true;
+        $('#spinner').hide();
+        $('#stage').show();
+        uniforms.superTileTexture.value = superTileData.textures[0];
+        uniforms.subTileAtlas.value = subTileData.atlas;
+        uniforms.subTileAverages.value = flatten(subTileData.averages);
+        uniforms.numSubImages.value = subTileData.textures.length;
+
       }
 
       // begin webcam code
@@ -419,9 +429,9 @@ void main() {
           var prevTimeElapsed = uniforms.time.value;
           var timeElapsed = (new Date()) - timeStarted;
           var dt = timeElapsed - prevTimeElapsed;
-          uniforms.time.value = timeElapsed;
-
           var ZOOM_MAX = uniforms.zoomMax.value;
+
+          uniforms.time.value = timeElapsed;
           uniforms.zoom.value = uniforms.zoom.value + dt / 2000;
           if (uniforms.zoom.value > ZOOM_MAX) {
             // reset zoom and switch the sub/super tilesets
@@ -570,54 +580,5 @@ void main() {
         });
       });
     }
-/*
-    google.load('search', '1');
-    google.setOnLoadCallback(function() {
-      for (var qIndex = 0; qIndex < queries.length; qIndex++) {
-        var query = queries[qIndex];
-        var gis = google.search.ImageSearch;
-        var colors = [gis.COLOR_BLACK, 
-                      gis.COLOR_BLUE,
-                      gis.COLOR_BROWN,
-                      gis.COLOR_GRAY,
-                      gis.COLOR_GREEN,
-                      gis.COLOR_ORANGE,
-                      gis.COLOR_PINK,
-                      gis.COLOR_PURPLE,
-                      gis.COLOR_RED,
-                      gis.COLOR_TEAL,
-                      gis.COLOR_WHITE,
-                      gis.COLOR_YELLOW];
-        images[query] = {};
-        function search(queries, queryIndex, colors, colorIndex) {
-          var imageSearch = new google.search.ImageSearch();
-          var color = colors[colorIndex];
-          console.log(color);
-          imageSearch.setRestriction(gis.RESTRICT_IMAGESIZE,
-                                    gis.IMAGESIZE_MEDIUM);
-          imageSearch.setRestriction(gis.RESTRICT_COLORFILTER, color);
-          imageSearch.setResultSetSize(1);
-          imageSearch.setSearchCompleteCallback(this, function (color, query, qIndex, images) {
-            if (imageSearch.results && imageSearch.results.length > 0) {
-              var results = imageSearch.results;
-              for (var i = 0; i < results.length; i++) {
-                $('body').append('<img src="' + results[i].tbUrl + '"></img>');
-                console.log(color, results[i].tbUrl);
-                images[query][color] = results[i].tbUrl;
-              }
-            }
-  
-            if (colorIndex + 1 < colors.length) {
-              search(queries, queryIndex, colors, colorIndex + 1);
-            }
-            else if (qIndex + 1 == queries.length) { // if each color + each query has completed
-              $(document).trigger('allImagesRetrieved', images);
-            }
-          }, [color, query, qIndex, images]);
-          imageSearch.execute(query);
-        }
-        search(colors, 0);
-      }
-    });*/
   </script>
 </html>
