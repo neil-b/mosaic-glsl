@@ -4,7 +4,7 @@ Webpage and server that creates image mosaics from google search queries
 
 Installation
 ----
-Install [node.js](nodejs.org) and run:
+Install [node.js](http://nodejs.org) and run:
 
 ```
 cd server
