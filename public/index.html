@@ -79,18 +79,15 @@
       }
       var superTileData = new TileData();
       var subTileData = new TileData();
-      var ATLAS_WIDTH = 8192, ATLAS_HEIGHT = 8192;
+      var ATLAS_WIDTH = 4096, ATLAS_HEIGHT = 4096;
       var ATLAS_SUB_WIDTH = 512, ATLAS_SUB_HEIGHT = 512;
 
       // -- initialize basic uniforms --
       var uniforms = {
           time: {type: 'f', value: 0},
+          timePerLayer: {type: 'f', value: 0}, // will initialize later in code
           mouse: {type: 'v2', value: new THREE.Vector2(0, 0)},
           resolution: {type: 'v2', value: new THREE.Vector2(0, 0)},
-
-          zoom: {type: 'f', value: 1},
-          zoomMax: {type: 'f', value: 2.7}, 
-          zoomPosition: {type: 'v2', value: new THREE.Vector2(0, 0)},
       };
 
       // placeholder values until we calculate actual averages
@@ -190,7 +187,7 @@
             context.drawImage(textures[i].image, tileX, tileY, subWidth, subHeight);
           }
 
-          document.body.appendChild(canvas);
+          //document.body.appendChild(canvas); // debug -- add the atlas to body as an <img>
 
           var ret = new THREE.Texture(canvas);
           ret.wrapS = ret.wrapT = THREE.RepeatWrapping;
@@ -324,17 +321,16 @@
 
         renderer.render(scene, camera);
         function update() {
+          var MSEC_PER_LAYER = 3000.0; // switch super and sub tiles every n milliseconds
           var prevTimeElapsed = uniforms.time.value;
           var timeElapsed = (new Date()) - timeStarted;
           var dt = timeElapsed - prevTimeElapsed;
-          var ZOOM_MAX = uniforms.zoomMax.value;
 
+          uniforms.timePerLayer.value = MSEC_PER_LAYER;
           uniforms.time.value = timeElapsed;
-          uniforms.zoom.value = uniforms.zoom.value + dt / 2000;
-          if (uniforms.zoom.value > ZOOM_MAX) {
-            // reset zoom and switch the sub/super tilesets
-            uniforms.zoom.value = uniforms.zoom.value % ZOOM_MAX + 1.0;
-
+          // if it's time to switch to the next "recursive" layer
+          if (Math.floor(prevTimeElapsed / MSEC_PER_LAYER) < Math.floor(timeElapsed / MSEC_PER_LAYER)) {
+            // switch the sub/super tilesets
             var tmp = superTileData;
             superTileData = subTileData;
             subTileData = tmp;
@@ -360,8 +356,6 @@
 
             uniforms.numSubImages.value = subTileData.textures.length;
           }
-          var zoomPos = 0;
-          uniforms.zoomPosition.value = new THREE.Vector2(zoomPos, zoomPos);
         }
         update();
       }
@@ -446,7 +440,7 @@
       $('#queryEditor').hide();
       var out;
       var successfulReuploads = [];
-      var MAX_STATIC_FOLDER_IMAGES = 256;
+      var MAX_STATIC_FOLDER_IMAGES = 64;
       for (var i = 0; i < MAX_STATIC_FOLDER_IMAGES; i++) {
         // assume there are MAX_STATIC_FOLDER_IMAGES in any given folder. 
         // any missing images will be dealt with later
