@@ -37,8 +37,8 @@ precision highp float;
 precision highp int;
 
 // changes to these defines need to be reflected in the js code and vice versa
-#define ATLAS_WIDTH 4096.0 // these two should be powers of two, for compat. with older gpus
-#define ATLAS_HEIGHT 4096.0
+#define ATLAS_WIDTH 8192.0 // these two should be powers of two, for compat. with older gpus
+#define ATLAS_HEIGHT 8192.0
 #define ATLAS_SUB_WIDTH 512.0
 #define ATLAS_SUB_HEIGHT 512.0
 #define MAX_NUM_IMAGES (int((ATLAS_WIDTH * ATLAS_HEIGHT) / (ATLAS_SUB_WIDTH * ATLAS_SUB_HEIGHT)))
@@ -192,13 +192,13 @@ void main() {
       var timeStarted = new Date();
 
       function TileData() {
-        this.textures = undefined;
+        this.textures = [];
         this.averages = [];
         this.atlas = undefined; // one big texture containing all textures
       }
       var superTileData = new TileData();
       var subTileData = new TileData();
-      var ATLAS_WIDTH = 4096, ATLAS_HEIGHT = 4096;
+      var ATLAS_WIDTH = 8192, ATLAS_HEIGHT = 8192;
       var ATLAS_SUB_WIDTH = 512, ATLAS_SUB_HEIGHT = 512;
 
       // -- initialize basic uniforms --
@@ -228,34 +228,39 @@ void main() {
 
       for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
         var query = queries[queryIndex];
-        var textures = [];
 
         // load images
         for (var i = 0; i < successfulReuploads[queryIndex].length; i++) {
           var textureIndex = successfulReuploads[queryIndex][i];
           var url = 'reup/' + query + '/' + textureIndex;
           // get texture (async)
-          var texture = new THREE.ImageUtils.loadTexture(url, undefined, function() {
-            // on loaded: 
-            imagesLeft--;
-            if (imagesLeft == 0) {
-              preprocessTiles([superTileData, subTileData]);
-            }
-          });
-          texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-          textures.push(texture);
-        }
-        if (queryIndex == 0) {
-          superTileData.textures = textures;
-        }
-        else if (queryIndex == 1) {
-          subTileData.textures = textures;
+          (function(qi) {
+            new THREE.ImageUtils.loadTexture(url, undefined, 
+              function(tex) { // on loaded: 
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                if (qi == 0) {
+                  superTileData.textures.push(tex);
+                }
+                else if (qi == 1) {
+                  subTileData.textures.push(tex);
+                }
+
+                imagesLeft--;
+                if (imagesLeft == 0) {
+                  preprocessTiles([superTileData, subTileData]);
+                }
+              }, function() { // on error
+                imagesLeft--;
+                if (imagesLeft == 0) {
+                  preprocessTiles([superTileData, subTileData]);
+                }
+              }
+            );
+          })(queryIndex);
         }
       } 
 
       function preprocessTiles(tileDatas) {
-
-        // modified from http://stackoverflow.com/questions/2541481/get-average-color-of-image-via-javascript
         function getAverageRGB(texture) {
           var average = [0.5, 0.5, 0.5];
           var canvas = document.createElement('canvas');
@@ -303,6 +308,8 @@ void main() {
             var tileY = Math.floor((i * subWidth) / atlasWidth) * subHeight;
             context.drawImage(textures[i].image, tileX, tileY, subWidth, subHeight);
           }
+
+          document.body.appendChild(canvas);
 
           var ret = new THREE.Texture(canvas);
           ret.wrapS = ret.wrapT = THREE.RepeatWrapping;
@@ -536,10 +543,6 @@ void main() {
     else {
       var query1 = getURLParameter('q1') || 'space';
       var query2 = getURLParameter('q2') || 'nature';
-
-      if (query1 == 'me' && query2 == 'me') {
-        alert('at least one of the fields must be a query');
-      }
     }
 
     $('#query1').val(query1);
@@ -552,7 +555,10 @@ void main() {
       $('#queryEditor').hide();
       var out;
       var successfulReuploads = [];
-      for (var i = 0; i < 64; i++) {
+      var MAX_STATIC_FOLDER_IMAGES = 256;
+      for (var i = 0; i < MAX_STATIC_FOLDER_IMAGES; i++) {
+        // assume there are MAX_STATIC_FOLDER_IMAGES in any given folder. 
+        // any missing images will be dealt with later
         successfulReuploads.push(i);
       }
       out = [successfulReuploads, successfulReuploads];
