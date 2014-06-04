@@ -15,15 +15,18 @@ uniform vec2 resolution;
 uniform vec2 mouse;
 
 uniform int numSubImages;
-
 uniform sampler2D superTileTexture;
 uniform sampler2D subTileAtlas;
-
 uniform sampler2D subTileAveragesTexture; // 1d texture
+
+uniform vec2 baseTileSize;
+uniform float baseZoom;
+uniform vec2 basePosition;
 
 // returns the time in milliseconds the "layer" (eg the current level of recursion) has been active
 float getLayerTime() {
-  return mod(time, timePerLayer);
+  //return mod(time, timePerLayer);
+  return timePerLayer + timePerLayer * sin(0.001 * time);
 }
 
 // returns the time in milliseconds the program has been running
@@ -34,12 +37,17 @@ float getTime() {
 // returns the amount of zoom to use
 // 1.0 is no zoom 
 float zoomFunc() {
-  return 1.5 + sin(0.01*getTime()) * 0.5;
+  return baseZoom;
 }
 
 // returns the offset position of the camera
 vec2 positionFunc() {
-  return vec2(0.0, 0.0);
+  return basePosition;
+}
+
+vec2 sizeFunc() { 
+  return baseTileSize + vec2(0.025 * cos(0.0005 * getTime()),
+                             0.05 * 0.499 * cos(0.00005 * getTime()));
 }
 
 // Returns the texture coordinates of a tile (specified by index) from the texture atlas.
@@ -65,9 +73,9 @@ vec2 getAtlasCoord(int index, vec2 tPos) {
 }
 
 void main() {
-  const vec2 TILE_SIZE = vec2(0.02, 0.02); // adjust these for bigger tiles or "patches"
+  vec2 TILE_SIZE = sizeFunc();
   vec2 nPos = gl_FragCoord.xy / resolution.xy; // coordinate of fragment from (0,0) to (1,1), wrt entire renderable area
-  vec2 zPos = (vec2(nPos.x, nPos.y) + positionFunc()) / zoomFunc(); // coordinate of the fragment in the zoomed space
+  vec2 zPos = positionFunc() + vec2(nPos.x, nPos.y) / zoomFunc(); // coordinate of the fragment in the zoomed space
 
   vec2 tile = vec2(floor(zPos.x / TILE_SIZE.x), floor(zPos.y / TILE_SIZE.y)); // the tile this fragment resides in (eg (0,0), (1,4), etc...)
   vec2 tPos = zPos / TILE_SIZE - tile; // relative tile position (between (0, 0) and (1, 1))

@@ -14,6 +14,13 @@
       <input type="text" id="query2" placeholder="second query" value="nature"><br>
       <button id="searchButton">Go</button>
     </div>
+    <div id="sliderPane" style="padding:0.2em; position:fixed; right:1em; top:1em; background-color:#cccccc">
+      Tile Width: <input id="slider_tileWidth" type="range" min="0" max="0.25" step="0.01" value="0.0001"><br>
+      Tile Height: <input id="slider_tileHeight" type="range" min="0" max="0.25" step="0.01" value="0.0001"><br>
+      Zoom: <input id="slider_zoom" type="range" min="1.0" max="5.0" step="0.1" value="1.0"><br>
+      Horizontal Position: <input id="slider_x" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
+      Vertical Position: <input id="slider_y" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
+    </div>
     <img id="spinner" src="./spinner.gif" style="background:#ffffff; background-size:100% 100%; position:absolute; left:50%; top:50%;"></img>
   </body>
   </script>
@@ -58,10 +65,13 @@
         }
       }
 
+
+
       console.log('starting mosaic', queries, successfulReuploads);
       // -- graphics code --
       // -- set up --
       var scene, camera, renderer;
+      var uniforms;
       // webcam vars
       var video, videoTexture, videoImage, videoImageContext;
       var webcamReady = false;
@@ -85,17 +95,39 @@
       var superTileData = new TileData();
       var subTileData = new TileData();
       var ATLAS_WIDTH = 4096, ATLAS_HEIGHT = 4096;
-      var ATLAS_SUB_WIDTH = 512, ATLAS_SUB_HEIGHT = 512;
+      var ATLAS_SUB_WIDTH = 256, ATLAS_SUB_HEIGHT = 256;
       var MAX_NUM_IMAGES = Math.floor((ATLAS_WIDTH * ATLAS_HEIGHT) / (ATLAS_SUB_WIDTH * ATLAS_SUB_HEIGHT));
       
 
       // -- initialize basic uniforms --
-      var uniforms = {
+      uniforms = {
           time: {type: 'f', value: 0},
           timePerLayer: {type: 'f', value: 0}, // will initialize later in code
           mouse: {type: 'v2', value: new THREE.Vector2(0, 0)},
           resolution: {type: 'v2', value: new THREE.Vector2(0, 0)},
+
+          baseTileSize: {type: 'v2', value: new THREE.Vector2(0.01, 0.01)},
+          baseZoom: {type: 'f', value: 1},
+          basePosition: {type: 'v2', value: new THREE.Vector2(0., 0.)},          
       };
+
+      // handlers for uniform slider events
+      $('#slider_tileWidth').on('input', function() {
+        uniforms.baseTileSize.value.x = this.value;
+      });
+      $('#slider_tileHeight').on('input', function() {
+        uniforms.baseTileSize.value.y = this.value;
+      });
+      $('#slider_zoom').on('input', function() {
+        uniforms.baseZoom.value = this.value;
+      });
+      $('#slider_x').on('input', function() {
+        uniforms.basePosition.value.x = this.value;
+      });
+      $('#slider_y').on('input', function() {
+        uniforms.basePosition.value.y = this.value;
+      });
+
 
       var shaderMaterial = new THREE.ShaderMaterial({
         vertexShader: getShaderSource('vertex.glsl'), 
