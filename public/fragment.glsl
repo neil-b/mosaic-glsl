@@ -19,7 +19,7 @@ uniform int numSubImages;
 uniform sampler2D superTileTexture;
 uniform sampler2D subTileAtlas;
 
-uniform vec3 subTileAverages[MAX_NUM_IMAGES];
+uniform sampler2D subTileAveragesTexture; // 1d texture
 
 // returns the time in milliseconds the "layer" (eg the current level of recursion) has been active
 float getLayerTime() {
@@ -93,7 +93,9 @@ void main() {
       break;
     }
 
-    float newDist = distance(average.rgb, subTileAverages[ti].rgb);
+    vec3 subTileAverage = texture2D(subTileAveragesTexture, 
+                                    vec2(float(ti) / float(MAX_NUM_IMAGES), 0.)).rgb;
+    float newDist = distance(average.rgb, subTileAverage);
     if (newDist < closestDist) {
       closestDist = newDist;
       closestIndex = ti;

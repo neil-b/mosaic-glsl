@@ -61,12 +61,16 @@
       console.log('starting mosaic', queries, successfulReuploads);
       // -- graphics code --
       // -- set up --
+      var scene, camera, renderer;
+      // webcam vars
+      var video, videoTexture, videoImage, videoImageContext;
+      var webcamReady = false;
       try {
-        var scene = new THREE.Scene();
-        var camera = undefined; 
-        var renderer = new THREE.WebGLRenderer({antialias: true});
-        // webcam vars
-        var video, videoTexture, videoImage, videoImageContext, webcamReady = false;
+        scene = new THREE.Scene();
+        camera = undefined; 
+        renderer = new THREE.WebGLRenderer({antialias: true});
+        gl = renderer.context;
+        webcamReady = false;
       } catch(e) {
         alert('There was a problem creating the webgl context.');
       }
@@ -75,12 +79,15 @@
       function TileData() {
         this.textures = [];
         this.averages = [];
+        this.averagesTexture = undefined; // a 1d texture containing the averages as pixel data
         this.atlas = undefined; // one big texture containing all textures
       }
       var superTileData = new TileData();
       var subTileData = new TileData();
       var ATLAS_WIDTH = 4096, ATLAS_HEIGHT = 4096;
       var ATLAS_SUB_WIDTH = 512, ATLAS_SUB_HEIGHT = 512;
+      var MAX_NUM_IMAGES = Math.floor((ATLAS_WIDTH * ATLAS_HEIGHT) / (ATLAS_SUB_WIDTH * ATLAS_SUB_HEIGHT));
+      
 
       // -- initialize basic uniforms --
       var uniforms = {
@@ -89,6 +96,12 @@
           mouse: {type: 'v2', value: new THREE.Vector2(0, 0)},
           resolution: {type: 'v2', value: new THREE.Vector2(0, 0)},
       };
+
+      var shaderMaterial = new THREE.ShaderMaterial({
+        vertexShader: getShaderSource('vertex.glsl'), 
+        fragmentShader: getShaderSource('fragment.glsl'), 
+        uniforms: uniforms,
+      });
 
       // placeholder values until we calculate actual averages
       for (var i = 0; i < successfulReuploads[0].length; i++) {
@@ -166,6 +179,31 @@
           return average;
         }
 
+        // write average RGB values into a 1d texture
+        function blitAverages(averages) { 
+          if (averages.length > MAX_NUM_IMAGES) {
+            throw new Error('More averages than MAX_NUM_IMAGES');
+          }
+          var canvas = document.createElement('canvas');
+          var context = canvas.getContext('2d');
+          canvas.width = MAX_NUM_IMAGES;
+          canvas.height = 1; // "1d" texture
+
+          for (var i = 0; i < averages.length; i++) {
+            average = averages[i];
+            context.fillStyle = 'rgb(' + average[0]*255 + ',' + average[1]*255 + ',' + average[2]*255 + ')';
+            context.fillRect(i, 0, 1, 1);
+          }
+
+          //document.body.appendChild(canvas); // debug -- add the atlas to body as an <img>
+
+          var ret = new THREE.Texture(canvas);
+          ret.wrapS = ret.wrapT = THREE.RepeatWrapping;
+          ret.magFilter = THREE.NearestFilter;
+          ret.needsUpdate = true; // texture will be black without this
+          return ret;
+        }
+
         function generateAtlas(textures, atlasWidth, atlasHeight, subWidth, subHeight) {
           var tilesPerRow = Math.floor(atlasWidth / subWidth);
           var tilesPerColumn = Math.floor(atlasWidth / subHeight);
@@ -191,6 +229,7 @@
 
           var ret = new THREE.Texture(canvas);
           ret.wrapS = ret.wrapT = THREE.RepeatWrapping;
+          ret.needsUpdate = true; // texture will be black without this
           return ret;
         }
 
@@ -199,16 +238,16 @@
           for (var i = 0; i < tileData.textures.length; i++) {
             tileData.averages[i] = getAverageRGB(tileData.textures[i]);
           }
+          tileData.averagesTexture = blitAverages(tileData.averages);
+
           tileData.atlas = generateAtlas(tileData.textures, ATLAS_WIDTH, ATLAS_HEIGHT, ATLAS_SUB_WIDTH, ATLAS_SUB_HEIGHT);
-          tileData.atlas.needsUpdate = true;
         }
         $('#spinner').hide();
         $('#stage').show();
         uniforms.superTileTexture.value = superTileData.textures[0];
         uniforms.subTileAtlas.value = subTileData.atlas;
-        uniforms.subTileAverages.value = flatten(subTileData.averages);
+        uniforms.subTileAveragesTexture.value = subTileData.averagesTexture;
         uniforms.numSubImages.value = subTileData.textures.length;
-
       }
 
       // begin webcam code
@@ -257,7 +296,7 @@
       // create uniforms for the textures
       uniforms.superTileTexture = {type: 't', value: superTileData.textures[0]};
       uniforms.subTileAtlas = {type: 't', value: subTileData.atlas};
-      uniforms.subTileAverages = {type: 'fv', value: flatten(subTileData.averages)};
+      uniforms.subTileAveragesTexture = {type: 't', value: subTileData.averagesTexture};
       uniforms.numSubImages = {type: 'i', value: subTileData.textures.length};
 
       $('#stage').append(renderer.domElement);
@@ -292,11 +331,7 @@
         }
         else return undefined;
       }
-      var shaderMaterial = new THREE.ShaderMaterial({
-        vertexShader: getShaderSource('vertex.glsl'), 
-        fragmentShader: getShaderSource('fragment.glsl'), 
-        uniforms: uniforms,
-      });
+
       var planeGeometry = new THREE.PlaneGeometry(50, 50, 50, 50);
       var plane = new THREE.Mesh(planeGeometry, shaderMaterial);
       plane.position.set(0, 0, -1);
@@ -352,7 +387,7 @@
               uniforms.superTileTexture.value = videoTexture;
             }
             uniforms.subTileAtlas.value = subTileData.atlas;
-            uniforms.subTileAverages.value = flatten(subTileData.averages);
+            uniforms.subTileAveragesTexture.value = subTileData.averagesTexture;
 
             uniforms.numSubImages.value = subTileData.textures.length;
           }
