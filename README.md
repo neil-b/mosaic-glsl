@@ -35,3 +35,5 @@ Libraries used
 [three.js](https://github.com/mrdoob/three.js/)
 
 [jquery](https://github.com/jquery/jquery)
+
+proj.jpg by Klaus Friese (https://www.flickr.com/photos/hamburgerjung/13968044841/)
