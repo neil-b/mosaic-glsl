@@ -57,6 +57,11 @@
       });
     }
 
+    // returns nearest power of two greater than x
+    function nearestPOT(x) {
+      return Math.pow(2, ceil(Math.log(x) / Math.log(2)));
+    }
+
     // start the mosaic once the reuploaded images are ready
     $(document).on('allImagesReady', function(e, queries, successfulReuploads, useCamera) {
       for (var i = 0; i < queries.length; i++) {
@@ -69,7 +74,7 @@
       console.log('starting mosaic', queries, successfulReuploads);
       // -- graphics code --
       // -- set up --
-      var planeScene, sphereScene, planeCamera, sphereCamera, renderer, controls, viewTexture;
+      var planeScene, sphereScene, planeCamera, sphereCamera, renderer, viewTexture;
       var uniforms;
       // webcam vars
       var video, videoTexture, videoImage, videoImageContext;
@@ -158,6 +163,7 @@
           (function(qi) {
             new THREE.ImageUtils.loadTexture(url, undefined, 
               function(tex) { // on loaded: 
+                tex.generateMipmaps = false;
                 tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
                 if (qi == 0) {
                   superTileData.textures.push(tex);
@@ -226,7 +232,6 @@
           }
 
           //document.body.appendChild(canvas); // debug -- add the atlas to body as an <img>
-
           var ret = new THREE.Texture(canvas);
           ret.wrapS = ret.wrapT = THREE.RepeatWrapping;
           ret.magFilter = THREE.NearestFilter;
@@ -344,23 +349,16 @@
         sphereCamera = new THREE.PerspectiveCamera(viewingAngle, aspectRatio, near, far);
         planeCamera = new THREE.PerspectiveCamera(viewingAngle, aspectRatio, near, far);
         uniforms.resolution.value.set(width, height);
-        viewTexture = new THREE.WebGLRenderTarget(width, height);
+        // gpus prefer the dimensions of textures to be power of two
+        viewTexture = new THREE.WebGLRenderTarget(nearestPOT(width), nearestPOT(height));
 
         planeScene.add(planeCamera);
         sphereScene.add(sphereCamera);
         planeCamera.position.set(0, 0, 0);
         sphereCamera.position.set(0, 0, 0);
         sphereCamera.lookAt(sphereScene.position);
-        if (controls) {
-          controls.handleResize();
-        }
       }
       window.onresize();
-
-      controls = new THREE.FirstPersonControls(sphereCamera);
-      controls.movementSpeed = 0;
-      controls.lookSpeed = 0.0005;
-      controls.lookVertical = true;
 
       // -- initialize quad --
       // read external shader source text
@@ -414,8 +412,6 @@
           var prevTimeElapsed = uniforms.time.value;
           var timeElapsed = (new Date()) - timeStarted;
           var dt = timeElapsed - prevTimeElapsed;
-
-          controls.update(dt);
 
           uniforms.timePerLayer.value = MSEC_PER_LAYER;
           uniforms.time.value = timeElapsed;
