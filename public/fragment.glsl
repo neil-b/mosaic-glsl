@@ -66,8 +66,8 @@ vec2 getAtlasCoord(int index, vec2 tPos) {
   atlasCoord.y = 1. - (atlasCoord.y / ATLAS_HEIGHT);
 
   // apply the relative tile position to get the actual texture coordinate
-  atlasCoord.x += tPos.x / 8.;
-  atlasCoord.y -= (1. - tPos.y) / 8.;
+  atlasCoord.x += tPos.x / (ATLAS_WIDTH / ATLAS_SUB_WIDTH);
+  atlasCoord.y -= (1. - tPos.y) / (ATLAS_HEIGHT / ATLAS_SUB_HEIGHT);
 
   return atlasCoord;
 }
