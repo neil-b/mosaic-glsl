@@ -79,6 +79,8 @@
       // webcam vars
       var video, videoTexture, videoImage, videoImageContext;
       var webcamReady = false;
+      var viewTarget = {x: 0, y: 0, z: 0};
+      var mouse = {x: 0, y: 0};
       try {
         sphereScene = new THREE.Scene();
         planeScene = new THREE.Scene();
@@ -130,6 +132,12 @@
       });
       $('#slider_y').on('input', function() {
         uniforms.basePosition.value.y = this.value;
+      });
+
+      // record the current mouse position
+      $('#stage').mousemove(function(e) {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
       });
 
       var shaderMaterial = new THREE.ShaderMaterial({
@@ -413,6 +421,22 @@
           var timeElapsed = (new Date()) - timeStarted;
           var dt = timeElapsed - prevTimeElapsed;
 
+          // mouse-camera movement
+          var MOUSE_SENSITIVITY = 0.5;
+          var stageWidth = $('#stage').width();
+          var stageHeight = $('#stage').height();
+          console.log(stageWidth);
+          var long = (mouse.x - stageWidth/2) * MOUSE_SENSITIVITY + 0;
+          var lat = (stageHeight/2 - mouse.y) * MOUSE_SENSITIVITY + 0;
+          lat = Math.max(-85, Math.min(85, lat));
+          var phi = THREE.Math.degToRad(90 - lat);
+          var theta = THREE.Math.degToRad(long);
+          viewTarget.x = Math.sin(phi) * Math.cos(theta);
+          viewTarget.y = Math.cos(phi);
+          viewTarget.z = Math.sin(phi) * Math.sin(theta);
+          sphereCamera.lookAt(viewTarget);
+
+          // uniform update
           uniforms.timePerLayer.value = MSEC_PER_LAYER;
           uniforms.time.value = timeElapsed;
           // if it's time to switch to the next "recursive" layer
