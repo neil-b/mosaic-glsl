@@ -5,8 +5,8 @@ precision highp int;
 // changes to these defines need to be reflected in the js code and vice versa
 #define ATLAS_WIDTH 4096.0 // these two should be powers of two, for compat. with older gpus
 #define ATLAS_HEIGHT 4096.0
-#define ATLAS_SUB_WIDTH 512.0
-#define ATLAS_SUB_HEIGHT 512.0
+#define ATLAS_SUB_WIDTH 256.0
+#define ATLAS_SUB_HEIGHT 256.0
 #define MAX_NUM_IMAGES (int((ATLAS_WIDTH * ATLAS_HEIGHT) / (ATLAS_SUB_WIDTH * ATLAS_SUB_HEIGHT)))
 
 uniform float timePerLayer;
