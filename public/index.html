@@ -16,13 +16,11 @@
       <button id="searchButton">Go</button>
     </div>
     <div id="sliderPane" style="padding:0.2em; position:fixed; right:1em; top:1em; background-color:#cccccc">
-      Tile Width: <input id="slider_tileWidth" type="range" min="0" max="0.25" step="0.01" value="0.0001"><br>
-      Tile Height: <input id="slider_tileHeight" type="range" min="0" max="0.25" step="0.01" value="0.0001"><br>
       Zoom: <input id="slider_zoom" type="range" min="1.0" max="5.0" step="0.1" value="1.0"><br>
       Horizontal Position: <input id="slider_x" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
       Vertical Position: <input id="slider_y" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
       <br>
-      <button id="snapshotButton">Snapshot</button><br>
+      <button disabled id="snapshotButton">Snapshot</button><br>
     </div>
     <img id="spinner" src="./spinner.gif" style="background:#ffffff; background-size:100% 100%; position:absolute; left:50%; top:50%;"></img>
   </body>
@@ -128,12 +126,6 @@
         }
       });
 
-      $('#slider_tileWidth').on('input', function() {
-        uniforms.baseTileSize.value.x = this.value;
-      });
-      $('#slider_tileHeight').on('input', function() {
-        uniforms.baseTileSize.value.y = this.value;
-      });
       $('#slider_zoom').on('input', function() {
         uniforms.baseZoom.value = this.value;
       });
@@ -466,6 +458,9 @@
           videoImageContext.drawImage(video, 0, 0, videoImage.width, videoImage.height);
           if (videoTexture) {
             videoTexture.needsUpdate = true;
+            if ($('#snapshotButton').css('disabled')) {
+              $('#snapshotButton').css('disabled', false);
+            }
           }
         }
 
