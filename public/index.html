@@ -24,6 +24,7 @@
       <button disabled id="snapshotButton">Snapshot</button><br>
 
     </div>
+    <div id="cameraFlash" style="top:0; right:0; width:100%; height:100%; background-color:#ffffff; opacity:0; pointer-events:none; z-index:10; position:fixed;"></div>
     <img id="spinner" src="./spinner.gif" style="background:#ffffff; background-size:100% 100%; position:absolute; left:50%; top:50%;"></img>
   </body>
   </script>
@@ -158,6 +159,19 @@
         setTimeout(function() {
           $('#snapshotButton').removeAttr('disabled');
         }, SNAPSHOT_TIMEOUT);
+
+        // start the snapshot animation
+        $('#cameraFlash').animate({
+            opacity: 1.0,
+          }, {
+            complete: function() {
+              $('#cameraFlash').animate({
+                opacity: 0.0,
+              }, 100);
+            },
+            duration: 100,
+          }
+        );
 
         // add snapshot to texture list
         var tileDatas = [superTileData, subTileData];
