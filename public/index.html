@@ -20,7 +20,9 @@
       Horizontal Position: <input id="slider_x" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
       Vertical Position: <input id="slider_y" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
       <br>
+      <button disabled id="viewChangeButton">Webcam View</button>
       <button disabled id="snapshotButton">Snapshot</button><br>
+
     </div>
     <img id="spinner" src="./spinner.gif" style="background:#ffffff; background-size:100% 100%; position:absolute; left:50%; top:50%;"></img>
   </body>
@@ -59,6 +61,7 @@
       var video, videoTexture, videoImage, videoImageContext;
       var webcamReady = false;
       var viewTarget = {x: 0, y: 0, z: 0};
+      var viewType = 'panorama';
 
       // camera movement vars
       var mouse = {x: 0, y: 0}, prevMouse = {x: 0, y: 0};
@@ -136,8 +139,41 @@
         uniforms.basePosition.value.y = this.value;
       });
 
+      $('#viewChangeButton').on('click', function() {
+        if (viewType == 'webcam') {
+          viewType = 'panorama';
+          $('#viewChangeButton').html('Webcam View');
+        }
+        else if (viewType == 'panorama') {
+          viewType = 'webcam';
+          $('#viewChangeButton').html('Panorama View');
+        }
+        else throw new Error('unexcepted viewType');
+      });
+
       $('#snapshotButton').on('click', function() {
-        console.log('snap');
+        // disable any more snapshots until n mseconds
+        var SNAPSHOT_TIMEOUT = 3000;
+        $('#snapshotButton').attr('disabled', 'disabled');
+        setTimeout(function() {
+          $('#snapshotButton').removeAttr('disabled');
+        }, SNAPSHOT_TIMEOUT);
+
+        // add snapshot to texture list
+        var tileDatas = [superTileData, subTileData];
+        for (var i = 0; i < tileDatas.length; i++) {
+          var tileData = tileDatas[i];
+          // textures are full, replace a random texture with the video image
+          if (tileData.textures.length == MAX_NUM_IMAGES) {
+            var textureIndex = floor(Math.random() * MAX_NUM_IMAGES);
+            tileData.textures[textureIndex] = videoTexture;
+          }
+          // textures are not full, video image to textures
+          else {
+            tileData.textures.push(videoTexture);
+          }
+          preprocessTiles(tileDatas);
+        }
       });
 
       $('#stage').mousewheel(function(event, delta) {
@@ -370,6 +406,8 @@
               stream.stop();
             }
             webcamReady = true;
+            $('#snapshotButton').removeAttr('disabled');
+            $('#viewChangeButton').removeAttr('disabled');
           },
           function(error) { // on failure
             alert('webcam error:', error);
@@ -458,17 +496,21 @@
           videoImageContext.drawImage(video, 0, 0, videoImage.width, videoImage.height);
           if (videoTexture) {
             videoTexture.needsUpdate = true;
-            if ($('#snapshotButton').css('disabled')) {
-              $('#snapshotButton').css('disabled', false);
-            }
           }
         }
 
-        // first, render the sphere view to a texture
-        renderer.render(sphereScene, sphereCamera, viewTexture);
+        if (viewType == 'panorama') {
+          // first, render the sphere view to a texture
+          renderer.render(sphereScene, sphereCamera, viewTexture);
 
-        // then, apply the mosaic shader to the sphere view texture
-        uniforms.superTileTexture.value = viewTexture;
+          // then, apply the mosaic shader to the sphere view texture
+          uniforms.superTileTexture.value = viewTexture;
+        }
+        else if (viewType == 'webcam') {
+          // apply the mosaic shader to the video texture
+          uniforms.superTileTexture.value = videoTexture
+        }
+        else throw new Error('unexpected viewType in render');
 
         renderer.render(planeScene, planeCamera);
         function update() {
@@ -482,6 +524,7 @@
           uniforms.time.value = timeElapsed;
           // if it's time to switch to the next "recursive" layer
           if (Math.floor(prevTimeElapsed / MSEC_PER_LAYER) < Math.floor(timeElapsed / MSEC_PER_LAYER)) {
+            /*
             // switch the sub/super tilesets
             var tmp = superTileData;
             superTileData = subTileData;
@@ -503,10 +546,12 @@
             else {
               uniforms.superTileTexture.value = videoTexture;
             }
+
             uniforms.subTileAtlas.value = subTileData.atlas;
             uniforms.subTileAveragesTexture.value = subTileData.averagesTexture;
 
             uniforms.numSubImages.value = subTileData.textures.length;
+            */
           }
         }
         update();
