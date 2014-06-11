@@ -1,5 +1,6 @@
 <html>
   <script src="./jquery-1.11.0.min.js"></script>
+  <script src="./jquery.mousewheel.min.js"></script>
   <script src="./three.min.js"></script>
   <script src="socket.io/socket.io.js"></script>
   <script src="https://www.google.com/jsapi"></script>
@@ -31,6 +32,10 @@
       return arr.reduce(function(a, b) {
         return a.concat(b);
       });
+    }
+
+    function clamp(x, min, max) {
+      return Math.max(min, Math.min(x, max));
     }
 
     // returns nearest power of two greater than x
@@ -141,6 +146,21 @@
 
       $('#snapshotButton').on('click', function() {
         console.log('snap');
+      });
+
+      $('#stage').mousewheel(function(event, delta) {
+        var SIZE_MODIFIER = 0.001;
+        var SIZE_MIN = 0.001;
+        var SIZE_MAX = 0.25;
+
+        uniforms.baseTileSize.value.x = clamp(
+          uniforms.baseTileSize.value.x - delta * SIZE_MODIFIER,
+          SIZE_MIN,
+          SIZE_MAX);
+        uniforms.baseTileSize.value.y = clamp(
+          uniforms.baseTileSize.value.y - delta * SIZE_MODIFIER,
+          SIZE_MIN,
+          SIZE_MAX);
       });
 
       $('body').mousedown(function(e) {

@@ -36,4 +36,6 @@ Libraries used
 
 [jquery](https://github.com/jquery/jquery)
 
+[jquery mousewheel](https://github.com/brandonaaron/jquery-mousewheel/)
+
 proj.jpg by Klaus Friese (https://www.flickr.com/photos/hamburgerjung/13968044841/)
