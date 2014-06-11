@@ -1,7 +1,6 @@
 <html>
   <script src="./jquery-1.11.0.min.js"></script>
   <script src="./three.min.js"></script>
-  <script src="./FirstPersonControls.js"></script>
   <script src="socket.io/socket.io.js"></script>
   <script src="https://www.google.com/jsapi"></script>
   <body style="width:100%; height:100%; margin:0px;">
@@ -21,36 +20,13 @@
       Zoom: <input id="slider_zoom" type="range" min="1.0" max="5.0" step="0.1" value="1.0"><br>
       Horizontal Position: <input id="slider_x" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
       Vertical Position: <input id="slider_y" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
+      <br>
+      <button id="snapshotButton">Snapshot</button><br>
     </div>
     <img id="spinner" src="./spinner.gif" style="background:#ffffff; background-size:100% 100%; position:absolute; left:50%; top:50%;"></img>
   </body>
   </script>
   <script>
-    $('#searchButton').click(function() {
-      console.log($('#query1').val(), $('#query2').val());
-      var q1 = $('#query1').val(), q2 = $('#query2').val();
-      if (q1.length > 0 && q2.length > 0) {
-        window.location = '?q1=' + q1 + '&q2=' + q2;
-      }
-    });
-
-    $('#query1').on('input', function() {
-      if ($('#query1').val().length == 0) {
-        $('#searchButton').attr('disabled', 'disabled');
-      }
-      else if ($('#query2').val().length > 0) {
-        $('#searchButton').removeAttr('disabled');
-      }
-    });
-    $('#query2').on('input', function() {
-      if ($('#query2').val().length == 0) {
-        $('#searchButton').attr('disabled', 'disabled');
-      }
-      else if ($('#query1').val().length > 0) {
-        $('#searchButton').removeAttr('disabled');
-      }
-    });
-
     function flatten(arr) {
       return arr.reduce(function(a, b) {
         return a.concat(b);
@@ -80,7 +56,12 @@
       var video, videoTexture, videoImage, videoImageContext;
       var webcamReady = false;
       var viewTarget = {x: 0, y: 0, z: 0};
-      var mouse = {x: 0, y: 0};
+
+      // camera movement vars
+      var mouse = {x: 0, y: 0}, prevMouse = {x: 0, y: 0};
+      var mouseDown = false;
+      var prevLat = 0, prevLong = 0;
+
       try {
         sphereScene = new THREE.Scene();
         planeScene = new THREE.Scene();
@@ -117,7 +98,31 @@
           basePosition: {type: 'v2', value: new THREE.Vector2(0., 0.)},          
       };
 
-      // handlers for uniform slider events
+      // handlers for ui events
+      $('#searchButton').click(function() {
+        var q1 = $('#query1').val(), q2 = $('#query2').val();
+        if (q1.length > 0 && q2.length > 0) {
+          window.location = '?q1=' + q1 + '&q2=' + q2;
+        }
+      });
+
+      $('#query1').on('input', function() {
+        if ($('#query1').val().length == 0) {
+          $('#searchButton').attr('disabled', 'disabled');
+        }
+        else if ($('#query2').val().length > 0) {
+          $('#searchButton').removeAttr('disabled');
+        }
+      });
+      $('#query2').on('input', function() {
+        if ($('#query2').val().length == 0) {
+          $('#searchButton').attr('disabled', 'disabled');
+        }
+        else if ($('#query1').val().length > 0) {
+          $('#searchButton').removeAttr('disabled');
+        }
+      });
+
       $('#slider_tileWidth').on('input', function() {
         uniforms.baseTileSize.value.x = this.value;
       });
@@ -134,10 +139,46 @@
         uniforms.basePosition.value.y = this.value;
       });
 
+      $('#snapshotButton').on('click', function() {
+        console.log('snap');
+      });
+
+      $('body').mousedown(function(e) {
+        if (e.which == 1) { // left mouse button
+          mouseDown = true;
+        }
+      });
+      $('body').mouseup(function(e) {
+        if (e.which == 1) { // left mouse button
+          mouseDown = false;
+        }
+      });
+
       // record the current mouse position
       $('#stage').mousemove(function(e) {
+        prevMouse.x = mouse.x;
+        prevMouse.y = mouse.y;
         mouse.x = e.clientX;
         mouse.y = e.clientY;
+
+        if (mouseDown) {
+          // mouse-camera movement
+          var MOUSE_SENSITIVITY = 0.5;
+          var stageWidth = $('#stage').width();
+          var stageHeight = $('#stage').height();
+          var long = (mouse.x - prevMouse.x) * MOUSE_SENSITIVITY + prevLong;
+          var lat = (prevMouse.y - mouse.y) * MOUSE_SENSITIVITY + prevLat;
+          lat = Math.max(-85, Math.min(85, lat));
+          var phi = THREE.Math.degToRad(90 - lat);
+          var theta = THREE.Math.degToRad(long);
+          viewTarget.x = Math.sin(phi) * Math.cos(theta);
+          viewTarget.y = Math.cos(phi);
+          viewTarget.z = Math.sin(phi) * Math.sin(theta);
+          sphereCamera.lookAt(viewTarget);
+
+          prevLong = long;
+          prevLat = lat;
+        }
       });
 
       var shaderMaterial = new THREE.ShaderMaterial({
@@ -420,21 +461,6 @@
           var prevTimeElapsed = uniforms.time.value;
           var timeElapsed = (new Date()) - timeStarted;
           var dt = timeElapsed - prevTimeElapsed;
-
-          // mouse-camera movement
-          var MOUSE_SENSITIVITY = 0.5;
-          var stageWidth = $('#stage').width();
-          var stageHeight = $('#stage').height();
-          console.log(stageWidth);
-          var long = (mouse.x - stageWidth/2) * MOUSE_SENSITIVITY + 0;
-          var lat = (stageHeight/2 - mouse.y) * MOUSE_SENSITIVITY + 0;
-          lat = Math.max(-85, Math.min(85, lat));
-          var phi = THREE.Math.degToRad(90 - lat);
-          var theta = THREE.Math.degToRad(long);
-          viewTarget.x = Math.sin(phi) * Math.cos(theta);
-          viewTarget.y = Math.cos(phi);
-          viewTarget.z = Math.sin(phi) * Math.sin(theta);
-          sphereCamera.lookAt(viewTarget);
 
           // uniform update
           uniforms.timePerLayer.value = MSEC_PER_LAYER;
