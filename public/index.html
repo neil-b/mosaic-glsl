@@ -433,8 +433,8 @@
             $('#snapshotButton').removeAttr('disabled');
             $('#viewChangeButton').removeAttr('disabled');
           },
-          function(error) { // on failure
-            alert('webcam error:', error);
+          function() { // on failure
+            alert("Webcam capture failed. Check your browser's webcam permission settings and try again");
           });
         }
 
