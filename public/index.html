@@ -19,9 +19,14 @@
       Zoom: <input id="slider_zoom" type="range" min="1.0" max="5.0" step="0.1" value="1.0"><br>
       Horizontal Position: <input id="slider_x" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
       Vertical Position: <input id="slider_y" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
+      Amplitude: <input id="slider_amplitude" type="range" min="0.001" max="0.1" step="0.001" value="0.001"><br>
+      Frequency: <input id="slider_frequency" type="range" min="0.0" max="0.01" step="0.0001" value="0.001"><br>
       <br>
       <button disabled id="viewChangeButton">Webcam View</button>
       <button disabled id="snapshotButton">Snapshot</button><br>
+      <br>
+      <button disabled id="deepZoomInButton">Deep Zoom +</button>
+      <button disabled id="deepZoomOutButton">Deep Zoom -</button><br>
       <br>
       <span>Press space to pause</span><br>
       <span>Scroll the mousewheel to zoom</span><br>
@@ -60,6 +65,8 @@
       // -- set up --
       var planeScene, sphereScene, planeCamera, sphereCamera, renderer, viewTexture;
       var uniforms;
+      var deepZoomStack = []; // list of textures
+      var deepZoomRequested = false;
       var paused = false;
       // webcam vars
       var video, videoTexture, videoImage, videoImageContext;
@@ -106,7 +113,9 @@
 
           baseTileSize: {type: 'v2', value: new THREE.Vector2(0.01, 0.01)},
           baseZoom: {type: 'f', value: 1},
-          basePosition: {type: 'v2', value: new THREE.Vector2(0., 0.)},          
+          basePosition: {type: 'v2', value: new THREE.Vector2(0., 0.)},
+          baseAmplitude: {type: 'f', value: 0.001},
+          baseFrequency: {type: 'f', value: 0.001},
       };
 
       // handlers for ui events
@@ -143,6 +152,12 @@
       $('#slider_y').on('input', function() {
         uniforms.basePosition.value.y = this.value;
       });
+      $('#slider_amplitude').on('input', function() {
+        uniforms.baseAmplitude.value = this.value;
+      });
+      $('#slider_frequency').on('input', function() {
+        uniforms.baseFrequency.value = this.value;
+      });
 
       $('#viewChangeButton').on('click', function() {
         if (viewType == 'webcam') {
@@ -176,7 +191,6 @@
             duration: 100,
           }
         );
-
         // add snapshot to texture list
         var tileDatas = [superTileData, subTileData];
         for (var i = 0; i < tileDatas.length; i++) {
@@ -191,6 +205,17 @@
             tileData.textures.push(videoTexture);
           }
           preprocessTiles(tileDatas);
+        }
+      });
+
+      $('#deepZoomInButton').on('click', function() {
+        deepZoomRequested = true;
+      });
+      $('#deepZoomOutButton').on('click', function() {
+        deepZoomStack.pop();
+        $('#deepZoomInButton').removeAttr('disabled');
+        if (deepZoomStack.length == 0) {
+          $('#deepZoomOutButton').attr('disabled', 'disabled');
         }
       });
 
@@ -233,7 +258,7 @@
         mouse.x = e.clientX;
         mouse.y = e.clientY;
 
-        if (mouseDown) {
+        if (mouseDown && deepZoomStack.length == 0) {
           // mouse-camera movement
           var MOUSE_SENSITIVITY = 0.5;
           var stageWidth = $('#stage').width();
@@ -400,6 +425,8 @@
         }
         $('#spinner').hide();
         $('#stage').show();
+        $('#deepZoomInButton').removeAttr('disabled');
+
         uniforms.superTileTexture.value = superTileData.textures[0];
         uniforms.subTileAtlas.value = subTileData.atlas;
         uniforms.subTileAveragesTexture.value = subTileData.averagesTexture;
@@ -536,7 +563,41 @@
         }
         else throw new Error('unexpected viewType in render');
 
+        // run the mosaic on the topmost texture of the zoom stack
+        if (deepZoomStack.length > 0) {
+          uniforms.superTileTexture.value = deepZoomStack[deepZoomStack.length-1];
+        }
+
+        if (deepZoomRequested) {
+          // save the frame buffer 
+          var MAX_DEEP_ZOOM_STACK_SIZE = 25;
+          var width = uniforms.resolution.value.x;
+          var height = uniforms.resolution.value.y;
+          var frame = new THREE.WebGLRenderTarget(nearestPOT(width), nearestPOT(height));
+
+          // need to change resolution during the frame generation
+          // to account for nearestPOT calls.
+          // also zoom in a little bit
+          var tmpRes = uniforms.resolution.value.clone();
+          var tmpZoom = uniforms.baseZoom.value; 
+          uniforms.resolution.value.x = nearestPOT(width);
+          uniforms.resolution.value.y = nearestPOT(height);
+          uniforms.baseZoom.value = tmpZoom + 0.1;
+          renderer.render(planeScene, planeCamera, frame);
+          uniforms.resolution.value = tmpRes;
+          uniforms.baseZoom.value = tmpZoom;
+
+          deepZoomStack.push(frame);
+          deepZoomRequested = false;
+
+          $('#deepZoomOutButton').removeAttr('disabled');
+          if (deepZoomStack.length >= MAX_DEEP_ZOOM_STACK_SIZE) {
+            $('#deepZoomInButton').attr('disabled', 'disabled');
+          }
+        }
+
         renderer.render(planeScene, planeCamera);
+
         function update() {
           var MSEC_PER_LAYER = 3000.0; // switch super and sub tiles every n milliseconds
           var prevTimeElapsed = uniforms.time.value;

@@ -22,11 +22,13 @@ uniform sampler2D subTileAveragesTexture; // 1d texture
 uniform vec2 baseTileSize;
 uniform float baseZoom;
 uniform vec2 basePosition;
+uniform float baseAmplitude;
+uniform float baseFrequency;
 
 // returns the time in milliseconds the "layer" (eg the current level of recursion) has been active
 float getLayerTime() {
   //return mod(time, timePerLayer);
-  return timePerLayer + timePerLayer * sin(0.001 * time);
+  return timePerLayer + timePerLayer * sin(baseFrequency * time) * baseAmplitude;
 }
 
 // returns the time in milliseconds the program has been running
@@ -42,12 +44,13 @@ float zoomFunc() {
 
 // returns the offset position of the camera
 vec2 positionFunc() {
-  return basePosition;
+  // this zooms to the center rather than the bottom left
+  return basePosition + (log(zoomFunc()) / log(30.0));
 }
 
 vec2 sizeFunc() { 
-  return baseTileSize + vec2(0.025 * cos(0.0005 * getTime()),
-                             0.05 * 0.499 * cos(0.00005 * getTime()));
+  return baseTileSize + vec2(baseAmplitude * cos(baseFrequency * getTime()),
+                             baseAmplitude * sin(baseFrequency * getTime()));
 }
 
 // Returns the texture coordinates of a tile (specified by index) from the texture atlas.
