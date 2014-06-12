@@ -16,7 +16,7 @@
       <button id="searchButton">Go</button>
     </div>
     <div id="sliderPane" style="padding:0.2em; position:fixed; right:1em; top:1em; background-color:#cccccc">
-      Zoom: <input id="slider_zoom" type="range" min="1.0" max="5.0" step="0.1" value="1.0"><br>
+      Zoom: <input id="slider_zoom" type="range" min="1.05" max="5.0" step="0.1" value="1.05"><br>
       Horizontal Position: <input id="slider_x" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
       Vertical Position: <input id="slider_y" type="range" min="-1.0" max="1.0" step="0.01" value="0.0"><br>
       Amplitude: <input id="slider_amplitude" type="range" min="0.001" max="0.1" step="0.001" value="0.001"><br>
@@ -112,7 +112,7 @@
           resolution: {type: 'v2', value: new THREE.Vector2(0, 0)},
 
           baseTileSize: {type: 'v2', value: new THREE.Vector2(0.01, 0.01)},
-          baseZoom: {type: 'f', value: 1},
+          baseZoom: {type: 'f', value: 1.05},
           basePosition: {type: 'v2', value: new THREE.Vector2(0., 0.)},
           baseAmplitude: {type: 'f', value: 0.001},
           baseFrequency: {type: 'f', value: 0.001},
@@ -577,15 +577,11 @@
 
           // need to change resolution during the frame generation
           // to account for nearestPOT calls.
-          // also zoom in a little bit
           var tmpRes = uniforms.resolution.value.clone();
-          var tmpZoom = uniforms.baseZoom.value; 
           uniforms.resolution.value.x = nearestPOT(width);
           uniforms.resolution.value.y = nearestPOT(height);
-          uniforms.baseZoom.value = tmpZoom + 0.1;
           renderer.render(planeScene, planeCamera, frame);
           uniforms.resolution.value = tmpRes;
-          uniforms.baseZoom.value = tmpZoom;
 
           deepZoomStack.push(frame);
           deepZoomRequested = false;
