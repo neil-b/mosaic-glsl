@@ -570,7 +570,7 @@
 
         if (deepZoomRequested) {
           // save the frame buffer 
-          var MAX_DEEP_ZOOM_STACK_SIZE = 25;
+          var MAX_DEEP_ZOOM_STACK_SIZE = 250;
           var width = uniforms.resolution.value.x;
           var height = uniforms.resolution.value.y;
           var frame = new THREE.WebGLRenderTarget(nearestPOT(width), nearestPOT(height));
