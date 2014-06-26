@@ -51,6 +51,17 @@
       return Math.pow(2, Math.ceil(Math.log(x) / Math.log(2)));
     }
 
+    // read external shader source text
+    function getShaderSource(url) {
+      var req = new XMLHttpRequest();
+      req.open('GET', url, false);
+      req.send(null);
+      if (req.status == 200) {
+        return req.responseText;
+      }
+      else return undefined;
+    }
+
     // start the mosaic once the reuploaded images are ready
     $(document).on('allImagesReady', function(e, queries, successfulReuploads, useCamera) {
       for (var i = 0; i < queries.length; i++) {
@@ -73,7 +84,6 @@
       var webcamReady = false;
       var viewTarget = {x: 0, y: 0, z: 0};
       var viewType = 'panorama';
-
       // camera movement vars
       var mouse = {x: 0, y: 0}, prevMouse = {x: 0, y: 0};
       var mouseDown = false;
@@ -102,7 +112,6 @@
       var ATLAS_WIDTH = 4096, ATLAS_HEIGHT = 4096;
       var ATLAS_SUB_WIDTH = 256, ATLAS_SUB_HEIGHT = 256;
       var MAX_NUM_IMAGES = Math.floor((ATLAS_WIDTH * ATLAS_HEIGHT) / (ATLAS_SUB_WIDTH * ATLAS_SUB_HEIGHT));
-      
 
       // -- initialize basic uniforms --
       uniforms = {
@@ -118,7 +127,7 @@
           baseFrequency: {type: 'f', value: 0.001},
       };
 
-      // handlers for ui events
+      // --- begin UI handlers ---
       $('#searchButton').click(function() {
         var q1 = $('#query1').val(), q2 = $('#query2').val();
         if (q1.length > 0 && q2.length > 0) {
@@ -208,6 +217,8 @@
         }
       });
 
+      // deep zoom: save the current frame as a texture and use it as the 
+      // super mosaic image
       $('#deepZoomInButton').on('click', function() {
         deepZoomRequested = true;
       });
@@ -219,6 +230,7 @@
         }
       });
 
+      // decrease / increase tile size on mousewheel movement
       $('#stage').mousewheel(function(event, delta) {
         var SIZE_MODIFIER = 0.001;
         var SIZE_MIN = 0.001;
@@ -234,6 +246,7 @@
           SIZE_MAX);
       });
 
+      // record mousebutton state
       $('body').mousedown(function(e) {
         if (e.which == 1) { // left mouse button
           mouseDown = true;
@@ -246,7 +259,8 @@
       });
 
       $(window).keypress(function(e) {
-        if (String.fromCharCode(e.keyCode) == ' ') { // if spacebar was pressed
+        // pause / unpause on space down
+        if (String.fromCharCode(e.keyCode) == ' ') {
           paused = !paused;
         }
       });
@@ -277,6 +291,7 @@
           prevLat = lat;
         }
       });
+      // --- end UI handlers ---
 
       var shaderMaterial = new THREE.ShaderMaterial({
         vertexShader: getShaderSource('vertex.glsl'), 
@@ -433,7 +448,7 @@
         uniforms.numSubImages.value = subTileData.textures.length;
       }
 
-      // begin webcam code
+      // webcam stuff:
       // bits of code here from http://stemkoski.github.io/Three.js/Webcam-Texture.html
       if (useCamera) {
         // initialize camera
@@ -499,7 +514,7 @@
         sphereCamera = new THREE.PerspectiveCamera(viewingAngle, aspectRatio, near, far);
         planeCamera = new THREE.PerspectiveCamera(viewingAngle, aspectRatio, near, far);
         uniforms.resolution.value.set(width, height);
-        // gpus prefer the dimensions of textures to be power of two
+        // gpus sometimes require the dimensions of textures to be power of two
         viewTexture = new THREE.WebGLRenderTarget(nearestPOT(width), nearestPOT(height));
 
         planeScene.add(planeCamera);
@@ -510,33 +525,21 @@
       }
       window.onresize();
 
-      // -- initialize quad --
-      // read external shader source text
-      function getShaderSource(url) {
-        var req = new XMLHttpRequest();
-        req.open('GET', url, false);
-        req.send(null);
-        if (req.status == 200) {
-          return req.responseText;
-        }
-        else return undefined;
-      }
-
+      // initialize quad. we will apply our mosaic shader to this object
       var planeGeometry = new THREE.PlaneGeometry(50, 50, 50, 50);
       var plane = new THREE.Mesh(planeGeometry, shaderMaterial);
       plane.position.set(0, 0, -1);
       planeScene.add(plane);
 
+      // initialize sphere. we will place the camera in the center and apply
+      // an equirectangularly projected texture to the sphere to have sort of
+      // a 3d environment.
       var sphereMaterial = new THREE.MeshBasicMaterial({map: new THREE.ImageUtils.loadTexture('proj.jpg')});
       var sphereGeometry = new THREE.SphereGeometry(50, 50, 50);
+      // scale by -1 so that the shape is viewable from the inside out
       sphereGeometry.applyMatrix(new THREE.Matrix4().makeScale(-1, 1, 1));
       var sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
       sphereScene.add(sphere);
-
-      // -- mouse tracking -- TODO unused at the moment
-      $('body').mousemove(function(event) {
-        uniforms.mouse.value.set(event.clientX, window.innerHeight - event.clientY /* flip y */);
-      });
 
       // -- begin rendering --
       function render() {
@@ -611,37 +614,6 @@
           // uniform update
           uniforms.timePerLayer.value = MSEC_PER_LAYER;
           uniforms.time.value = timeElapsed;
-          // if it's time to switch to the next "recursive" layer
-          if (Math.floor(prevTimeElapsed / MSEC_PER_LAYER) < Math.floor(timeElapsed / MSEC_PER_LAYER)) {
-            /*
-            // switch the sub/super tilesets
-            var tmp = superTileData;
-            superTileData = subTileData;
-            subTileData = tmp;
-
-            // the bottom left pixel's r value encodes the new super tile texture index.
-            // we need to retrieve it and modify our uniforms to reflect the change
-            var canvas = document.createElement('canvas');
-            canvas.width = renderer.domElement.width;
-            canvas.height = renderer.domElement.height;
-            var context = canvas.getContext('2d');
-            context.drawImage(renderer.domElement, 0, 0);
-            var pixelData = context.getImageData(0, renderer.domElement.height-1, 1, 1).data;
-            var newSuperTileIndex = Math.floor(pixelData[0] / 255 * superTileData.textures.length + 0.5); 
-
-            if (!webcamReady) {
-              uniforms.superTileTexture.value = superTileData.textures[newSuperTileIndex];
-            }
-            else {
-              uniforms.superTileTexture.value = videoTexture;
-            }
-
-            uniforms.subTileAtlas.value = subTileData.atlas;
-            uniforms.subTileAveragesTexture.value = subTileData.averagesTexture;
-
-            uniforms.numSubImages.value = subTileData.textures.length;
-            */
-          }
         }
         update();
       }
